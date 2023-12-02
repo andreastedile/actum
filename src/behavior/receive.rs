@@ -2,21 +2,7 @@ use crate::actor_input::ActorInput;
 use crate::behavior::setup::Setup;
 use crate::behavior::stopped::Stopped;
 
-pub struct Receive<M, O = (), S = ()>(pub(crate) Box<dyn FnMut(ActorInput<M, S>) -> Next<M, O, S> + Send>);
-
-impl<M, O, S> std::ops::Deref for Receive<M, O, S> {
-    type Target = Box<dyn FnMut(ActorInput<M, S>) -> Next<M, O, S> + Send>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<M> std::ops::DerefMut for Receive<M> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+pub struct Receive<M, O = (), S = ()>(pub(crate)Box<dyn FnMut(ActorInput<M, S>) -> Next<M, O, S> + Send>);
 
 /// Behaviors that can be returned by a [`Receive`] behavior.
 pub enum Next<M, O = (), S = ()> {

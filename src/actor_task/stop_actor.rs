@@ -27,23 +27,24 @@ where
 
     match stopped.0 {
         Left(output) => {
-            if let Interpreter::Receive(mut receive) = interpreter {
-                if let Err(cause) = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                    //
-                    let input = ActorInput::PostStop { context: &context };
-                    let _ignored = receive.0(input);
-                })) {
-                    Some(Err(ActorError::Panic(cause)))
-                } else {
-                    Some(Ok(output))
-                }
-            } else {
-                Some(Ok(output))
-            }
+            ActorResult(Some(Ok(output)))
+            // if let Interpreter::Receive(mut receive) = interpreter {
+            //     if let Err(cause) = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            //         //
+            //         let input = ActorInput::PostStop { context: &context };
+            //         let _ignored = receive.0(input);
+            //     })) {
+            //         ActorResult(Some(Err(ActorError::Panic(cause))))
+            //     } else {
+            //         ActorResult(Some(Ok(output)))
+            //     }
+            // } else {
+            //     ActorResult(Some(Ok(output)))
+            // }
         }
         Right(callback) => match panic::catch_unwind(panic::AssertUnwindSafe(|| callback(&context))) {
-            Ok(output) => Some(Ok(output)),
-            Err(cause) => Some(Err(ActorError::Panic(cause))),
+            Ok(output) => ActorResult(Some(Ok(output))),
+            Err(cause) => ActorResult(Some(Err(ActorError::Panic(cause)))),
         },
     }
 }
@@ -77,5 +78,5 @@ where
         }));
     }
 
-    error.map(|error| Err(error))
+    ActorResult(error.map(|error| Err(error)))
 }

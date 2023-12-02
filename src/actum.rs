@@ -7,7 +7,9 @@ use crate::behavior::initial::Initial;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::{info_span, instrument, trace_span, Instrument};
 
+#[instrument(level = "trace", skip(behavior, app), ret)]
 pub fn actum<M, O, S>(
     system: ActorSystem,
     behavior: impl Into<Initial<M, O, S>>,
@@ -25,7 +27,7 @@ where
 
     let (sender, receiver) = mpsc::channel::<M>(16);
 
-    let child_token = system.cancellation.clone();
+    let child_token = system.cancellation.child_token();
 
     // Used to watch the actor.
     let cancellation = CancellationToken::new();
@@ -48,9 +50,15 @@ where
         _drop_guard: cancellation.drop_guard(),
     };
 
-    let handle = system.runtime.spawn(run_actor(context, behavior.into()));
+    let span = trace_span!(parent: None, "actor", path = ?me.path);
+    let handle = system
+        .runtime
+        .spawn(run_actor(context, behavior.into()).instrument(span));
 
-    app(me);
+    let span = info_span!(parent: None, "app");
+    span.in_scope(|| {
+        app(me);
+    });
 
     system.runtime.block_on(handle).unwrap()
 }

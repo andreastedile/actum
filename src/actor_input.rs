@@ -13,7 +13,7 @@ pub enum ActorInput<'a, M, S> {
     Supervision {
         context: &'a mut ActorContext<M, S>,
         path: ActorPath,
-        supervision: ActorResult<S>,
+        result: ActorResult<S>,
     },
     PostStop {
         context: &'a ActorContext<M, S>,

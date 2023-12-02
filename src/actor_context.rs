@@ -1,6 +1,6 @@
 use crate::actor_path::{ActorPath, ActorPathInner};
 use crate::actor_ref::{ActorRef, ActorRefInner};
-use crate::actor_task::{run_actor, ActorResult};
+use crate::actor_task::{run_actor, ActorResult, ActorError};
 use crate::behavior::initial::Initial;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -12,6 +12,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::{AbortHandle, JoinSet};
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tokio_util::task::JoinMap;
+use tracing::{instrument, Instrument, trace, trace_span};
 
 use crate::actor_system::ActorSystem;
 
@@ -47,6 +48,7 @@ where
     M: Send + Sync + 'static,
     S: Send + Sync + 'static,
 {
+    #[instrument(level = "trace", skip(self, behavior), ret)]
     pub fn spawn<M1, O1, S1>(
         &mut self,
         name: &str,
@@ -100,10 +102,19 @@ where
             _drop_guard: cancellation.drop_guard(),
         };
 
+        let span = trace_span!(parent: None, "actor", path = ?me.path);
         self.children_tasks.spawn(me.path.clone(), async {
-            run_actor(actor_context, behavior.into())
-                .await
-                .map(|result| result.map(|output| output.into()))
+            let result = run_actor(actor_context, behavior.into()).instrument(span)
+                .await;
+            match result.0 {
+                None => ActorResult(None),
+                Some(a) => {
+                    match a {
+                        Ok(a) => ActorResult(Some(Ok(a.into()))),
+                        Err(err) => ActorResult(Some(Err(err))),
+                    }
+                }
+            }
         });
 
         self.children_tokens.insert(me.path.clone(), child_token);
@@ -115,22 +126,24 @@ where
         self.children_tasks.keys()
     }
 
-    pub fn watch<M1>(&mut self, actor: &ActorRef<M1>) -> Result<(), WatchError> {
+    #[instrument(level = "trace", skip(self))]
+    pub fn watch<M1>(&mut self, actor: &ActorRef<M1>) -> bool {
         if actor.path.is_descendant_of(&self.me.path) || !actor.path.is_ancestor_of(&self.me.path) {
-            self.watches
-                .spawn(actor.path.clone(), actor.cancellation.clone().cancelled_owned());
-            Ok(())
-        } else {
-            Err(WatchError)
+            if actor.cancellation.is_cancelled() {
+                true
+            } else {
+                self.watches
+                    .spawn(actor.path.clone(), actor.cancellation.clone().cancelled_owned());
+                false
+            }
+        } else { 
+            true
         }
     }
 
-    pub fn unwatch<M1>(&mut self, actor: &ActorRef<M1>) -> Result<(), UnwatchError> {
+    pub fn unwatch<M1>(&mut self, actor: &ActorRef<M1>) {
         if actor.path.is_descendant_of(&self.me.path) || !actor.path.is_ancestor_of(&self.me.path) {
             self.watches.abort(&actor.path);
-            Ok(())
-        } else {
-            Err(UnwatchError)
         }
     }
 

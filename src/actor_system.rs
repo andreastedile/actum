@@ -81,6 +81,10 @@ impl ActorSystem {
         Ok(ActorSystem { inner: Arc::new(inner) })
     }
 
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+
     pub fn stop(&mut self) {
         self.inner.cancellation.cancel()
     }

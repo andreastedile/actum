@@ -4,20 +4,6 @@ use crate::behavior::stopped::Stopped;
 
 pub struct Setup<M, O = (), S = ()>(pub(crate) Box<dyn FnOnce(&mut ActorContext<M, S>) -> Next<M, O, S> + Send>);
 
-impl<M, O, S> std::ops::Deref for Setup<M, O, S> {
-    type Target = Box<dyn FnOnce(&mut ActorContext<M, S>) -> Next<M, O, S> + Send>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<M, O, S> std::ops::DerefMut for Setup<M, O, S> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 /// Behaviors that can be returned by a [`Setup`] behavior.
 pub enum Next<M, O = (), S = ()> {
     Receive(Receive<M, O, S>),

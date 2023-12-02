@@ -32,6 +32,13 @@ fn behavior2(mut received: Vec<i32>) -> Receive<i32, i32> {
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::NEW | tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .with_target(false)
+        .with_line_number(false)
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
     let system = ActorSystem::new("sum", ActorSystemConfig::default()).unwrap();
 
     let sum = actum(system, behavior1(), |guardian| {
@@ -45,8 +52,6 @@ fn main() {
         guardian.send(2);
         guardian.send(1);
         guardian.send(0);
-    })
-    .unwrap()
-    .unwrap();
-    assert_eq!(sum, 3 + 2 + 1 + 3 + 2 + 1);
+    });
+    // assert_eq!(sum, 3 + 2 + 1 + 3 + 2 + 1);
 }

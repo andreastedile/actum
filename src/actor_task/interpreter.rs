@@ -4,6 +4,7 @@ use crate::actor_path::ActorPath;
 use crate::actor_task::ActorError;
 use crate::behavior::{receive, setup, stopped};
 use std::panic;
+use crate::prelude::ActorResult;
 
 pub enum Interpreter<M, O = (), S = ()> {
     Receive(receive::Receive<M, O, S>),
@@ -25,7 +26,7 @@ pub fn interpret_supervision<M, O, S>(
     interpreter: &mut Interpreter<M, O, S>,
     context: &mut ActorContext<M, S>,
     path: ActorPath,
-    supervision: Option<Result<S, ActorError>>,
+    result: ActorResult<S>,
 ) -> Result<Option<stopped::Stopped<M, O, S>>, ActorError>
 where
     M: Send + Sync + 'static,
@@ -36,7 +37,7 @@ where
         let input = ActorInput::Supervision {
             context,
             path,
-            supervision,
+            result,
         };
 
         match interpreter {

@@ -3,7 +3,7 @@ pub use crate::actor_path::ActorPath;
 pub use crate::actor_ref::ActorRef;
 pub use crate::actor_system::ActorSystem;
 pub use crate::actor_system::ActorSystemConfig;
-pub use crate::actor_task::ActorError;
+pub use crate::actor_task::{ActorError, ActorResult};
 pub use crate::actum::actum;
 pub use crate::behavior::narrow;
 pub use crate::behavior::receive;
