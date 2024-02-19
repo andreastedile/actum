@@ -1,14 +1,7 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod actor_cell;
+mod actor_input;
+mod actor_path;
+mod actor_ref;
+mod actor_system;
+pub mod actum;
+pub mod prelude;
