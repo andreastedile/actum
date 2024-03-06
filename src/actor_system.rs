@@ -37,7 +37,7 @@ impl Debug for ActorSystem {
 }
 
 impl ActorSystem {
-    pub fn new(name: &str, runtime: runtime::Handle) -> Result<Self, NameError> {
+    pub(crate) fn new(name: &str, runtime: runtime::Handle) -> Result<Self, NameError> {
         if name.is_empty() {
             return Err(NameError::IsEmpty);
         }

@@ -5,6 +5,7 @@ use crate::actor_system::{ActorSystem, NameError};
 use futures::FutureExt;
 use std::any::Any;
 use std::future::Future;
+use std::io;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -14,6 +15,7 @@ use tracing::{instrument, trace_span, Instrument};
 pub enum ActumError {
     Name(NameError),
     Panic(Box<dyn Any + Send>),
+    Io(io::Error),
 }
 
 #[instrument(level = "trace", skip(actor_fn), ret)]
@@ -26,7 +28,10 @@ where
     Fut: Future + Send + 'static,
     Fut::Output: Send + 'static,
 {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => return Err(ActumError::Io(error)),
+    };
 
     let system = match ActorSystem::new(name, runtime.handle().clone()) {
         Ok(system) => system,

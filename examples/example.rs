@@ -23,13 +23,12 @@ async fn child(mut cell: ActorCell<ChildMessage>) {
 }
 
 async fn guardian(mut cell: ActorCell<ParentMessage>) {
-    let child = cell.spawn("child", child);
+    let child = cell.spawn("child", child).unwrap();
 
     info!("Send 1 to child");
-
     child.send(ChildMessage {
         n: 1,
-        reply_to: cell.me().clone(),
+        reply_to: cell.me.clone(),
     });
 
     if let Some(ActorInput::Message(message)) = (&mut cell).await {
@@ -37,7 +36,6 @@ async fn guardian(mut cell: ActorCell<ParentMessage>) {
     }
 
     info!("Stopping child");
-
     cell.stop(&child.path);
 
     if let Some(ActorInput::Supervision { path, panic }) = (&mut cell).await {

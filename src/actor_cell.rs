@@ -12,19 +12,19 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{instrument, trace, trace_span, Instrument};
 
-struct ChildActor {
-    path: ActorPath,
-    stop_sender: mpsc::UnboundedSender<()>,
-    result_receiver: mpsc::UnboundedReceiver<Option<Box<dyn Any + Send>>>,
-}
-
 pub struct ActorCell<M> {
-    system: ActorSystem,
-    me: ActorRef<M>,
+    pub system: ActorSystem,
+    pub me: ActorRef<M>,
     message_receiver: mpsc::Receiver<M>,
     stop_receiver: mpsc::UnboundedReceiver<()>,
     children: Vec<ChildActor>,
     drop: CancellationToken,
+}
+
+struct ChildActor {
+    path: ActorPath,
+    stop_sender: mpsc::UnboundedSender<()>,
+    result_receiver: mpsc::UnboundedReceiver<Option<Box<dyn Any + Send>>>,
 }
 
 impl<M> Drop for ActorCell<M> {
@@ -123,25 +123,33 @@ impl<M> ActorCell<M> {
         }
     }
 
-    pub const fn system(&self) -> &ActorSystem {
-        &self.system
-    }
-
-    pub const fn me(&self) -> &ActorRef<M> {
-        &self.me
-    }
-
     #[instrument(level = "trace", skip(self, actor_fn), ret)]
     pub fn spawn<M2, Fut>(
         &mut self,
         name: &str,
         actor_fn: impl FnOnce(ActorCell<M2>) -> Fut,
-    ) -> ActorRef<M2>
+    ) -> Option<ActorRef<M2>>
     where
         M2: Send + 'static,
         Fut: Future + Send + 'static,
         Fut::Output: Send + 'static,
     {
+        if self.stop_receiver.try_recv().is_ok() {
+            trace!("Stopping");
+
+            self.stop_receiver.close();
+            self.message_receiver.close();
+
+            while self.stop_receiver.try_recv().is_ok() {}
+            while self.message_receiver.try_recv().is_ok() {}
+
+            for child in &self.children {
+                let _ = child.stop_sender.send(());
+            }
+
+            return None;
+        }
+
         let path = self.me.path.make_child(name);
 
         let (message_sender, message_receiver) = mpsc::channel::<M2>(42);
@@ -187,7 +195,7 @@ impl<M> ActorCell<M> {
             .instrument(span),
         );
 
-        me
+        Some(me)
     }
 
     pub fn stop(&self, child: &ActorPath) {

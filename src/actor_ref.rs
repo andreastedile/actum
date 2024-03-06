@@ -25,7 +25,7 @@ impl<M> Clone for ActorRef<M> {
 }
 
 impl<M> ActorRef<M> {
-    pub const fn new(path: ActorPath, sender: mpsc::Sender<M>) -> Self {
+    pub(crate) const fn new(path: ActorPath, sender: mpsc::Sender<M>) -> Self {
         Self { path, sender }
     }
 
