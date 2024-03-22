@@ -9,6 +9,7 @@ use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc;
+use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
 use tracing::{instrument, trace, trace_span, Instrument};
 
@@ -102,6 +103,14 @@ impl<M> Future for ActorCell<M> {
         }
 
         Poll::Pending
+    }
+}
+
+impl<M> Stream for ActorCell<M> {
+    type Item = ActorInput<M>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll(cx)
     }
 }
 
