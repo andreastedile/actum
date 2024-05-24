@@ -27,7 +27,6 @@ impl<M, AB> ActorCell<M, AB> {
     }
 }
 
-#[derive(Debug)]
 pub struct Stop;
 
 pub struct Stopped;

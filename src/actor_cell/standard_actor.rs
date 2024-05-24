@@ -46,14 +46,14 @@ where
         })
     }
 
-    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Result<Actor<M2, ActorTask<M2, F, Fut, StandardBounds>>, Stop>
+    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, StandardBounds>>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
-            return Err(Stop);
+            return None;
         }
 
         let stop_channel = oneshot::channel::<Stop>();
@@ -73,6 +73,6 @@ where
             Some(self.stopped_sender.clone()),
         );
 
-        Ok(Actor::new(task, guard, m2_ref))
+        Some(Actor::new(task, guard, m2_ref))
     }
 }

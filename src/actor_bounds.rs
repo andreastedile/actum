@@ -1,6 +1,5 @@
 use crate::actor::Actor;
 use crate::actor_cell::actor_task::RunTask;
-use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
 use std::future::Future;
 
@@ -28,12 +27,12 @@ where
 
     /// Define a child actor.
     ///
-    /// This method returns `Err(Stop)` when the actor has been stopped by its parent or when all its [ActorRef]s have been dropped.
-    /// After that this method has returned `Err(Stop)`, subsequent calls to the method will continue to do so.
+    /// This method returns `None` when the actor has been stopped by its parent or when all its [ActorRef]s have been dropped.
+    /// After that this method has returned `None`, subsequent calls to the method will continue to do so.
     fn spawn<M2, F, Fut>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = Result<Actor<M2, Self::SpawnOut<M2, F, Fut>>, Stop>> + Send + '_
+    ) -> impl Future<Output = Option<Actor<M2, Self::SpawnOut<M2, F, Fut>>>> + Send + '_
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,

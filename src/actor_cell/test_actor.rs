@@ -53,7 +53,7 @@ where
         m_channel.1.await.expect("the effect sends m on drop")
     }
 
-    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Result<Actor<M2, ActorTask<M2, F, Fut, TestBounds<M2>>>, Stop>
+    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, TestBounds<M2>>>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -72,7 +72,7 @@ where
                 channel.1.await.expect("the effect sends unit on drop");
             }
 
-            return Err(Stop);
+            return None;
         }
 
         let stop_channel = oneshot::channel::<Stop>();
@@ -104,6 +104,6 @@ where
             channel.1.await.expect("the effect did not send unit on drop");
         }
 
-        Ok(Actor::new(task, guard, m_ref))
+        Some(Actor::new(task, guard, m_ref))
     }
 }
