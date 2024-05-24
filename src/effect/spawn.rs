@@ -2,32 +2,32 @@ use std::fmt::{Debug, Formatter};
 
 use futures::channel::oneshot;
 
-use crate::testkit::executor::{AnyExecutor, EffectExecutor};
+use crate::testkit::{AnyTestkit, Testkit};
 
 pub struct SpawnEffect {
-    executor: Option<AnyExecutor>,
+    testkit: Option<AnyTestkit>,
     // wrap in Option so that it can be taken in Drop.
     unit_sender: Option<oneshot::Sender<()>>,
 }
 
 impl SpawnEffect {
-    pub(crate) fn new<M>(executor: Option<EffectExecutor<M>>, unit_sender: oneshot::Sender<()>) -> Self
+    pub(crate) fn new<M>(testkit: Option<Testkit<M>>, unit_sender: oneshot::Sender<()>) -> Self
     where
         M: Send + 'static,
     {
         Self {
-            executor: executor.map(AnyExecutor::from),
+            testkit: testkit.map(AnyTestkit::from),
             unit_sender: Some(unit_sender),
         }
     }
 
-    pub fn executor(&mut self) -> Option<&mut AnyExecutor> {
-        self.executor.as_mut()
+    pub fn testkit(&mut self) -> Option<&mut AnyTestkit> {
+        self.testkit.as_mut()
     }
 
-    pub(crate) fn into_inner(mut self) -> Option<AnyExecutor> {
+    pub(crate) fn into_inner(mut self) -> Option<AnyTestkit> {
         self.unit_sender = None;
-        self.executor.take()
+        self.testkit.take()
     }
 }
 

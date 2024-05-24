@@ -1,12 +1,12 @@
-use crate::testkit::effect::recv::RecvEffect;
-use crate::testkit::effect::spawn::SpawnEffect;
-use std::fmt::{Debug, Formatter};
-
 pub mod recv;
 pub mod spawn;
 
+use crate::effect::recv::RecvEffect;
+use crate::effect::spawn::SpawnEffect;
+use std::fmt::{Debug, Formatter};
+
 /// An actor that calls the [recv](crate::actor_bounds::ActorBounds::recv) or [spawn](crate::actor_bounds::ActorBounds::spawn) methods
-/// sends the corresponding effect to the [EffectExecutor](crate::testkit::EffectExecutor) and suspends
+/// sends the corresponding effect to the [Testkit](crate::testkit::Testkit) and suspends
 /// until the effect is tested and dropped.
 pub enum Effect<M> {
     Recv(RecvEffect<M>),

@@ -12,6 +12,7 @@ pub mod actor_bounds;
 pub mod actor_cell;
 pub mod actor_ref;
 pub mod drop_guard;
+pub mod effect;
 pub mod prelude;
 pub mod testkit;
 
@@ -92,7 +93,7 @@ where
     let guard = ActorDropGuard::new(stop_channel.0);
     let bounds = StandardBounds;
     let cell = ActorCell::new(stop_channel.1, stopped_channel.0, m_channel.1, bounds);
-    
+
     let m_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, m_ref.clone(), stopped_channel.1, None);
     Actor::new(task, guard, m_ref)

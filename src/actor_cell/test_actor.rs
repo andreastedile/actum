@@ -5,10 +5,10 @@ use crate::actor_cell::ActorCell;
 use crate::actor_cell::{Stop, Stopped};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
-use crate::testkit::effect::recv::RecvEffect;
-use crate::testkit::effect::spawn::SpawnEffect;
-use crate::testkit::effect::Effect;
-use crate::testkit::executor::EffectExecutor;
+use crate::effect::recv::RecvEffect;
+use crate::effect::spawn::SpawnEffect;
+use crate::effect::Effect;
+use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Either, FusedFuture};
 use futures::stream::FusedStream;
@@ -45,7 +45,7 @@ where
         let effect = RecvEffect::new(m, m_channel.0);
 
         if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-            // The executor and the inner receiver dropped.
+            // The testkit dropped.
 
             return error.into_inner().recv().unwrap().into_inner();
         };
@@ -65,13 +65,13 @@ where
             let effect = SpawnEffect::new::<M>(None, channel.0);
 
             if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-                // The executor and the inner receiver dropped.
+                // The testkit dropped.
 
                 let _ = error.into_inner().spawn().unwrap().into_inner();
             } else {
                 channel.1.await.expect("the effect sends unit on drop");
             }
-            
+
             return Err(Stop);
         }
 
@@ -93,11 +93,11 @@ where
             Some(self.stopped_sender.clone()),
         );
 
-        let executor = EffectExecutor::new(effect_m2_channel.1);
-        let effect = SpawnEffect::new(Some(executor), channel.0);
+        let testkit = Testkit::new(effect_m2_channel.1);
+        let effect = SpawnEffect::new(Some(testkit), channel.0);
 
         if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-            // The executor and the inner receiver dropped.
+            // The testkit dropped.
 
             let _ = error.into_inner().recv().unwrap().into_inner();
         } else {
