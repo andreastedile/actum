@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::actor_bounds::ActorBounds;
+use crate::actor_bounds::{ActorBounds, Recv};
 use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::Stop;
 use crate::actor_cell::{ActorCell, Stopped};
@@ -25,23 +25,19 @@ where
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static;
 
-    fn recv(&mut self) -> impl Future<Output = Option<M>> + Send + '_ {
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
         poll_fn(|cx| {
             if self.stop_receiver.poll_unpin(cx).is_ready() {
                 // Poll::Ready(Ok(Stop)) | Poll::Ready(Err(oneshot::Canceled))
 
                 self.m_receiver.close();
-                while let Poll::Ready(Some(_)) = self.m_receiver.poll_next_unpin(cx) {}
-
-                Poll::Ready(None)
+                self.m_receiver.poll_next_unpin(cx).map(Recv::Stopped)
             } else {
-                // match self.m_receiver.poll_next_unpin(cx) {
-                //     Poll::Ready(Some(m)) => Poll::Ready(Some(m)),
-                //     Poll::Ready(None) => Poll::Ready(None),
-                //     Poll::Pending => Poll::Pending,
-                // }
-
-                self.m_receiver.poll_next_unpin(cx)
+                match self.m_receiver.poll_next_unpin(cx) {
+                    Poll::Ready(Some(m)) => Poll::Ready(Recv::Message(m)),
+                    Poll::Ready(None) => Poll::Ready(Recv::NoMoreSenders),
+                    Poll::Pending => Poll::Pending,
+                }
             }
         })
     }

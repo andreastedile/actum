@@ -30,7 +30,7 @@ pub mod testkit;
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     let m = cell.recv().await.unwrap();
+///     let m = cell.recv().await.message().unwrap();
 ///     println!("{}", m);
 /// }
 ///
@@ -49,7 +49,7 @@ pub mod testkit;
 /// #[tokio::main]
 /// async fn main() {
 ///     let mut root = actum::<u64, _, _>(|mut cell, me| async move {
-///         let m = cell.recv().await.unwrap();
+///         let m = cell.recv().await.message().unwrap();
 ///         println!("{}", m);
 ///     });
 ///     root.m_ref.try_send(1).unwrap();
@@ -65,7 +65,7 @@ pub mod testkit;
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     let m = cell.recv().await.unwrap();
+///     let m = cell.recv().await.message().unwrap();
 ///     vec.push(m);
 ///     for m in vec {
 ///         println!("{}", m);

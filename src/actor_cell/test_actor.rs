@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::actor_bounds::ActorBounds;
+use crate::actor_bounds::{ActorBounds, Recv};
 use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::{Stop, Stopped};
@@ -42,29 +42,39 @@ where
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output= ()> + Send + 'static;
 
-    async fn recv(&mut self) -> Option<M> {
+    async fn recv(&mut self) -> Recv<M> {
         let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
-        let m = if let Either::Right((m, _)) = select { m } else { None };
+        let recv = match select {
+            Either::Left(_) => {
+                self.m_receiver.close();
+                // let m = self.m_receiver.try_next().expect("channel is closed");
+                // Recv::Stopped(m)
+                let m = self.m_receiver.try_next().expect("channel is closed");
+                Recv::Stopped(m)
+            }
+            Either::Right((Some(m), _)) => Recv::Message(m),
+            Either::Right((None, _)) => Recv::NoMoreSenders,
+        };
 
         if let Some(recv_effect_out_m_sender) = self.bounds.recv_effect_out_m_sender.take() {
             let recv_effect_in_m_channel = oneshot::channel::<RecvEffectIn<M>>();
-            let effect = RecvEffectOut::new(m, recv_effect_in_m_channel.0);
+            let effect = RecvEffectOut::new(recv, recv_effect_in_m_channel.0);
 
-            if let Err(RecvEffectOut { m, .. }) = recv_effect_out_m_sender.send(effect) {
+            if let Err(RecvEffectOut { recv: m, .. }) = recv_effect_out_m_sender.send(effect) {
                 // The testkit dropped.
                 m
             } else {
                 let RecvEffectIn {
-                    m,
+                    recv,
                     recv_effect_out_m_sender,
                 } = recv_effect_in_m_channel.1.await.expect("the effect should reply");
 
                 self.bounds.recv_effect_out_m_sender = Some(recv_effect_out_m_sender);
-                m
+                recv
             }
         } else {
-            m
+            recv
         }
     }
 

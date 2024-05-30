@@ -12,7 +12,7 @@ use crate::actor_cell::Stop;
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     while let Some(m) = cell.recv().await {
+///     while let Recv::Message(m) = cell.recv().await {
 ///         println!("{}", m);
 ///     }
 /// }

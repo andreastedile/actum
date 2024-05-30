@@ -7,7 +7,7 @@ async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>)
 where
     AB: ActorBounds<u64>,
 {
-    let m1 = cell.recv().await.unwrap();
+    let m1 = cell.recv().await.message().unwrap();
     tracing::info!(recv = m1);
 
     let parent = me.clone();
@@ -20,7 +20,7 @@ where
     let span = tracing::info_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
-    let m2 = cell.recv().await.unwrap();
+    let m2 = cell.recv().await.message().unwrap();
     tracing::info!(recv = m2);
 
     assert_eq!(m2, m1 * 2);
@@ -33,7 +33,7 @@ where
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
 
-    let m = cell.recv().await.unwrap();
+    let m = cell.recv().await.message().unwrap();
     tracing::info!(recv = m);
 
     tracing::info!(try_send = m);
@@ -60,7 +60,7 @@ async fn test() {
     parent.m_ref.try_send(1).unwrap();
 
     let effect = parent_testkit.next().await.unwrap().recv().unwrap();
-    assert_eq!(*effect.message().unwrap(), 1);
+    assert!(effect.recv().is_message_and(|m| *m == 1));
     drop(effect);
 
     let mut effect = parent_testkit.next().await.unwrap().spawn().unwrap();
@@ -68,11 +68,11 @@ async fn test() {
     drop(effect);
 
     let effect = child_testkit.next().await.unwrap().recv().unwrap();
-    assert_eq!(*effect.message().unwrap(), 2);
+    assert!(effect.recv().is_message_and(|m| *m == 2));
     drop(effect);
 
     let effect = parent_testkit.next().await.unwrap().recv().unwrap();
-    assert_eq!(*effect.message().unwrap(), 2);
+    assert!(effect.recv().is_message_and(|m| *m == 2));
     drop(effect);
 
     handle.await.unwrap();

@@ -30,10 +30,10 @@ use std::task::{Context, Poll};
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     let m1 = cell.recv().await.unwrap();
+///     let m1 = cell.recv().await.message().unwrap();
 ///     me.try_send(m1 * 2).unwrap();
 ///
-///     let m2 = cell.recv().await.unwrap();
+///     let m2 = cell.recv().await.message().unwrap();
 ///     debug_assert_eq!(m2, m1 * 2);
 /// }
 ///
@@ -45,11 +45,11 @@ use std::task::{Context, Poll};
 ///     root.m_ref.try_send(42).unwrap();
 ///
 ///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert_eq!(*effect.message().unwrap(), 42);
+///     assert!(effect.recv().is_message_and(|m | *m == 42));
 ///     drop(effect);
 ///
 ///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert_eq!(*effect.message().unwrap(), 84);
+///     assert!(effect.recv().is_message_and(|m | *m == 84));
 ///     drop(effect);
 ///
 ///     handle.await.unwrap();
@@ -106,7 +106,7 @@ impl<M> Stream for Testkit<M> {
             Poll::Ready(Ok(effect)) => {
                 let recv_effect_out_m_channel = oneshot::channel::<RecvEffectOut<M>>();
                 self.recv_effect_out_m_receiver = recv_effect_out_m_channel.1;
-                let effect = RecvEffect::new(effect.m, recv_effect_out_m_channel.0, effect.recv_effect_in_m_sender);
+                let effect = RecvEffect::new(effect.recv, recv_effect_out_m_channel.0, effect.recv_effect_in_m_sender);
                 return Poll::Ready(Some(Effect::Recv(effect)));
             }
             Poll::Ready(Err(_)) => return Poll::Ready(None),
