@@ -20,19 +20,6 @@ pub struct ActorTask<M, F, Fut, CABT> {
     stopped_sender: Option<mpsc::UnboundedSender<Stopped>>,
 }
 
-impl<M, F, Fut, CABT> RunTask for ActorTask<M, F, Fut, CABT>
-where
-    M: Send + 'static,
-    F: FnOnce(ActorCell<M, CABT>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-    CABT: Send + 'static,
-{
-    /// Returns a future that runs the actor task and can be spawned onto the runtime of choice.
-    fn run_task(self) -> impl Future<Output = Option<Box<dyn Any + Send>>> + Send + 'static {
-        self.run()
-    }
-}
-
 impl<M, F, Fut, CABT> ActorTask<M, F, Fut, CABT> {
     pub const fn new(
         f: F,
@@ -52,14 +39,14 @@ impl<M, F, Fut, CABT> ActorTask<M, F, Fut, CABT> {
     }
 }
 
-impl<M, F, Fut, CABT> ActorTask<M, F, Fut, CABT>
+impl<M, F, Fut, CABT> RunTask for ActorTask<M, F, Fut, CABT>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<M, CABT>, ActorRef<M>) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
     CABT: Send + 'static,
 {
-    async fn run(mut self) -> Option<Box<dyn Any + Send>> {
+    async fn run_task(mut self) -> Option<Box<dyn Any + Send>> {
         tracing::trace!("start");
 
         let f = self.f;
