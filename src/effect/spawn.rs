@@ -6,28 +6,27 @@ use crate::testkit::{AnyTestkit, Testkit};
 
 pub struct SpawnEffect {
     testkit: Option<AnyTestkit>,
-    // wrap in Option so that it can be taken in Drop.
-    unit_sender: Option<oneshot::Sender<()>>,
+    // wrap in Option so that it can be taken.
+    spawn_effect_out_sender: Option<oneshot::Sender<SpawnEffectOut>>,
+    // wrap in Option so that it can be taken.
+    spawn_effect_in_sender: Option<oneshot::Sender<SpawnEffectIn>>,
 }
 
 impl SpawnEffect {
-    pub(crate) fn new<M>(testkit: Option<Testkit<M>>, unit_sender: oneshot::Sender<()>) -> Self
-    where
-        M: Send + 'static,
-    {
+    pub(crate) fn new(
+        testkit: Option<AnyTestkit>,
+        spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
+        spawn_effect_in_sender: oneshot::Sender<SpawnEffectIn>,
+    ) -> Self {
         Self {
-            testkit: testkit.map(AnyTestkit::from),
-            unit_sender: Some(unit_sender),
+            testkit,
+            spawn_effect_out_sender: Some(spawn_effect_out_sender),
+            spawn_effect_in_sender: Some(spawn_effect_in_sender),
         }
     }
 
     pub fn testkit(&mut self) -> Option<&mut AnyTestkit> {
         self.testkit.as_mut()
-    }
-
-    pub(crate) fn into_inner(mut self) -> Option<AnyTestkit> {
-        self.unit_sender = None;
-        self.testkit.take()
     }
 }
 
@@ -37,12 +36,36 @@ impl Debug for SpawnEffect {
     }
 }
 
+pub struct SpawnEffectOut {
+    pub testkit: Option<AnyTestkit>,
+    pub spawn_effect_in_sender: oneshot::Sender<SpawnEffectIn>,
+}
+
+impl SpawnEffectOut {
+    pub(crate) fn new<M>(testkit: Option<Testkit<M>>, spawn_effect_in_sender: oneshot::Sender<SpawnEffectIn>) -> Self
+    where
+        M: Send + 'static,
+    {
+        Self {
+            testkit: testkit.map(AnyTestkit::from),
+            spawn_effect_in_sender,
+        }
+    }
+}
+
 impl Drop for SpawnEffect {
     fn drop(&mut self) {
-        if let Some(unit_sender) = self.unit_sender.take() {
-            if unit_sender.send(()).is_err() {
-                panic!("Executor has dropped prematurely")
+        if let Some(spawn_effect_in_sender) = self.spawn_effect_in_sender.take() {
+            let effect = SpawnEffectIn {
+                spawn_effect_out_sender: self.spawn_effect_out_sender.take().unwrap(),
+            };
+            if spawn_effect_in_sender.send(effect).is_err() {
+                panic!("could not send the effect back to the actor")
             }
-        } // else: SpawnEffect::into_inner was called
+        }
     }
+}
+
+pub struct SpawnEffectIn {
+    pub spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
 }

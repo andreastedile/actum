@@ -3,26 +3,28 @@ use std::fmt::{Debug, Formatter};
 
 pub struct RecvEffect<M> {
     m: Option<M>,
-    // wrap in Option so that it can be taken in Drop.
-    m_sender: Option<oneshot::Sender<Option<M>>>,
+    // wrap in Option so that it can be taken.
+    recv_effect_out_m_sender: Option<oneshot::Sender<RecvEffectOut<M>>>,
+    // wrap in Option so that it can be taken.
+    recv_effect_in_m_sender: Option<oneshot::Sender<RecvEffectIn<M>>>,
 }
 
 impl<M> RecvEffect<M> {
-    pub(crate) fn new(m: Option<M>, m_sender: oneshot::Sender<Option<M>>) -> Self {
+    pub(crate) fn new(
+        m: Option<M>,
+        recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
+        recv_effect_in_m_sender: oneshot::Sender<RecvEffectIn<M>>,
+    ) -> Self {
         Self {
             m,
-            m_sender: Some(m_sender),
+            recv_effect_out_m_sender: Some(recv_effect_out_m_sender),
+            recv_effect_in_m_sender: Some(recv_effect_in_m_sender),
         }
     }
 
     /// Inspect the return value of [recv](crate::actor_bounds::ActorBounds::recv).
     pub const fn message(&self) -> Option<&M> {
         self.m.as_ref()
-    }
-
-    pub(crate) fn into_inner(mut self) -> Option<M> {
-        self.m_sender = None;
-        self.m.take()
     }
 }
 
@@ -32,13 +34,37 @@ impl<M> Debug for RecvEffect<M> {
     }
 }
 
+pub struct RecvEffectOut<M> {
+    pub m: Option<M>,
+    pub recv_effect_in_m_sender: oneshot::Sender<RecvEffectIn<M>>,
+}
+
+impl<M> RecvEffectOut<M> {
+    pub(crate) fn new(m: Option<M>, recv_effect_in_m_sender: oneshot::Sender<RecvEffectIn<M>>) -> Self {
+        Self {
+            m,
+            recv_effect_in_m_sender,
+        }
+    }
+}
+
 impl<M> Drop for RecvEffect<M> {
     fn drop(&mut self) {
-        if let Some(m_sender) = self.m_sender.take() {
+        if let Some(recv_effect_in_m_sender) = self.recv_effect_in_m_sender.take() {
             let m = self.m.take();
-            if m_sender.send(m).is_err() {
-                panic!("Executor has dropped prematurely")
+            let effect = RecvEffectIn {
+                m,
+                recv_effect_out_m_sender: self.recv_effect_out_m_sender.take().unwrap(),
+            };
+            if recv_effect_in_m_sender.send(effect).is_err() {
+                panic!("could not send the effect back to the actor")
             }
-        } // else: RecvEffect::into_inner was called
+        }
     }
+}
+
+pub struct RecvEffectIn<M> {
+    /// Return m back to the actor under test.
+    pub m: Option<M>,
+    pub recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
 }

@@ -5,9 +5,8 @@ use crate::actor_cell::ActorCell;
 use crate::actor_cell::{Stop, Stopped};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
-use crate::effect::recv::RecvEffect;
-use crate::effect::spawn::SpawnEffect;
-use crate::effect::Effect;
+use crate::effect::recv::{RecvEffectIn, RecvEffectOut};
+use crate::effect::spawn::{SpawnEffectIn, SpawnEffectOut};
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Either, FusedFuture};
@@ -16,12 +15,19 @@ use futures::{future, StreamExt};
 use std::future::Future;
 
 pub struct TestBounds<M> {
-    effect_m_sender: mpsc::UnboundedSender<Effect<M>>,
+    recv_effect_out_m_sender: Option<oneshot::Sender<RecvEffectOut<M>>>,
+    spawn_effect_out_sender: Option<oneshot::Sender<SpawnEffectOut>>,
 }
 
 impl<M> TestBounds<M> {
-    pub const fn new(effect_m_sender: mpsc::UnboundedSender<Effect<M>>) -> Self {
-        Self { effect_m_sender }
+    pub const fn new(
+        recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
+        spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
+    ) -> Self {
+        Self {
+            recv_effect_out_m_sender: Some(recv_effect_out_m_sender),
+            spawn_effect_out_sender: Some(spawn_effect_out_sender),
+        }
     }
 }
 
@@ -41,16 +47,25 @@ where
 
         let m = if let Either::Right((m, _)) = select { m } else { None };
 
-        let m_channel = oneshot::channel::<Option<M>>();
-        let effect = RecvEffect::new(m, m_channel.0);
+        if let Some(recv_effect_out_m_sender) = self.bounds.recv_effect_out_m_sender.take() {
+            let recv_effect_in_m_channel = oneshot::channel::<RecvEffectIn<M>>();
+            let effect = RecvEffectOut::new(m, recv_effect_in_m_channel.0);
 
-        if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-            // The testkit dropped.
+            if let Err(RecvEffectOut { m, .. }) = recv_effect_out_m_sender.send(effect) {
+                // The testkit dropped.
+                m
+            } else {
+                let RecvEffectIn {
+                    m,
+                    recv_effect_out_m_sender,
+                } = recv_effect_in_m_channel.1.await.expect("the effect should reply");
 
-            return error.into_inner().recv().unwrap().into_inner();
-        };
-
-        m_channel.1.await.expect("the effect sends m on drop")
+                self.bounds.recv_effect_out_m_sender = Some(recv_effect_out_m_sender);
+                m
+            }
+        } else {
+            m
+        }
     }
 
     async fn spawn<M2, F, Fut>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, TestBounds<M2>>>>
@@ -59,17 +74,20 @@ where
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let channel = oneshot::channel::<()>();
-
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
-            let effect = SpawnEffect::new::<M>(None, channel.0);
+            if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
+                let spawn_effect_in_channel = oneshot::channel::<SpawnEffectIn>();
+                let effect = SpawnEffectOut::new::<M2>(None, spawn_effect_in_channel.0);
 
-            if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-                // The testkit dropped.
+                if let Err(SpawnEffectOut { .. }) = spawn_effect_out_sender.send(effect) {
+                    // The testkit dropped.
+                } else {
+                    let SpawnEffectIn {
+                        spawn_effect_out_sender,
+                    } = spawn_effect_in_channel.1.await.expect("the effect should reply");
 
-                let _ = error.into_inner().spawn().unwrap().into_inner();
-            } else {
-                channel.1.await.expect("the effect sends unit on drop");
+                    self.bounds.spawn_effect_out_sender = Some(spawn_effect_out_sender);
+                }
             }
 
             return None;
@@ -78,10 +96,11 @@ where
         let stop_channel = oneshot::channel::<Stop>();
         let stopped_channel = mpsc::unbounded::<Stopped>();
         let m2_channel = mpsc::channel::<M2>(100);
-        let effect_m2_channel = mpsc::unbounded::<Effect<M2>>();
 
         let guard = ActorDropGuard::new(stop_channel.0);
-        let bounds = TestBounds::new(effect_m2_channel.0);
+        let recv_effect_out_m2_channel = oneshot::channel::<RecvEffectOut<M2>>();
+        let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
+        let bounds = TestBounds::new(recv_effect_out_m2_channel.0, spawn_effect_out_channel.0);
         let cell = ActorCell::new(stop_channel.1, stopped_channel.0, m2_channel.1, bounds);
 
         let m_ref = ActorRef::new(m2_channel.0);
@@ -93,15 +112,20 @@ where
             Some(self.stopped_sender.clone()),
         );
 
-        let testkit = Testkit::new(effect_m2_channel.1);
-        let effect = SpawnEffect::new(Some(testkit), channel.0);
+        if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
+            let spawn_effect_in_channel = oneshot::channel::<SpawnEffectIn>();
+            let testkit = Testkit::new(recv_effect_out_m2_channel.1, spawn_effect_out_channel.1);
+            let effect = SpawnEffectOut::new(Some(testkit), spawn_effect_in_channel.0);
 
-        if let Err(error) = self.bounds.effect_m_sender.unbounded_send(effect.into()) {
-            // The testkit dropped.
+            if let Err(SpawnEffectOut { .. }) = spawn_effect_out_sender.send(effect) {
+                // The testkit dropped.
+            } else {
+                let SpawnEffectIn {
+                    spawn_effect_out_sender,
+                } = spawn_effect_in_channel.1.await.expect("the effect should reply");
 
-            let _ = error.into_inner().recv().unwrap().into_inner();
-        } else {
-            channel.1.await.expect("the effect did not send unit on drop");
+                self.bounds.spawn_effect_out_sender = Some(spawn_effect_out_sender);
+            }
         }
 
         Some(Actor::new(task, guard, m_ref))
