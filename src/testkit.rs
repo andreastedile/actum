@@ -45,11 +45,11 @@ use std::task::{Context, Poll};
 ///     root.m_ref.try_send(42).unwrap();
 ///
 ///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert!(effect.recv().is_message_and(|m | *m == 42));
+///     assert!(effect.as_ref().is_message_and(|m | *m == 42));
 ///     drop(effect);
 ///
 ///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert!(effect.recv().is_message_and(|m | *m == 84));
+///     assert!(effect.as_ref().is_message_and(|m | *m == 84));
 ///     drop(effect);
 ///
 ///     handle.await.unwrap();

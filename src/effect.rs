@@ -30,10 +30,34 @@ impl<M> Effect<M> {
         }
     }
 
+    pub const fn is_recv(&self) -> bool {
+        matches!(self, Self::Recv(_))
+    }
+
+    pub fn is_recv_and(self, f: impl FnOnce(RecvEffect<M>) -> bool) -> bool {
+        if let Self::Recv(effect) = self {
+            f(effect)
+        } else {
+            false
+        }
+    }
+
     pub fn spawn(self) -> Option<SpawnEffect> {
         match self {
             Self::Recv(_) => None,
             Self::Spawn(effect) => Some(effect),
+        }
+    }
+
+    pub const fn is_spawn(&self) -> bool {
+        matches!(self, Self::Spawn(_))
+    }
+
+    pub fn is_spawn_and(self, f: impl FnOnce(SpawnEffect) -> bool) -> bool {
+        if let Self::Spawn(effect) = self {
+            f(effect)
+        } else {
+            false
         }
     }
 }

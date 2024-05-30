@@ -24,9 +24,44 @@ impl<M> RecvEffect<M> {
         }
     }
 
-    /// Inspect the return value of [recv](crate::actor_bounds::ActorBounds::recv).
-    pub fn recv(&self) -> Recv<&M> {
-        self.recv.as_ref().unwrap().as_ref()
+    pub fn message(&self) -> Option<&M> {
+        if let Recv::Message(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+            Some(m)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_message(&self) -> bool {
+        matches!(self.recv.as_ref().expect("recv is taken in Drop"), Recv::Message(_))
+    }
+
+    pub fn is_message_and(&self, f: impl FnOnce(&M) -> bool) -> bool {
+        if let Recv::Message(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+            f(m)
+        } else {
+            false
+        }
+    }
+
+    pub fn stopped(&self) -> Option<Option<&M>> {
+        if let Recv::Stopped(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+            Some(m.as_ref())
+        } else {
+            None
+        }
+    }
+
+    pub fn is_stopped_and(&self, f: impl FnOnce(Option<&M>) -> bool) -> bool {
+        if let Recv::Stopped(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+            f(m.as_ref())
+        } else {
+            false
+        }
+    }
+
+    pub fn is_no_more_senders(&self) -> bool {
+        matches!(self.recv.as_ref().expect("recv is taken in Drop"), Recv::NoMoreSenders)
     }
 }
 

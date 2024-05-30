@@ -59,21 +59,34 @@ async fn test() {
 
     parent.m_ref.try_send(1).unwrap();
 
-    let effect = parent_testkit.next().await.unwrap().recv().unwrap();
-    assert!(effect.recv().is_message_and(|m| *m == 1));
-    drop(effect);
+    assert!(parent_testkit
+        .next()
+        .await
+        .unwrap()
+        .is_recv_and(|recv| recv.is_message_and(|m| *m == 1)));
 
-    let mut effect = parent_testkit.next().await.unwrap().spawn().unwrap();
-    let mut child_testkit = effect.testkit().unwrap().downcast::<u64>().unwrap();
-    drop(effect);
+    let mut child_testkit = parent_testkit
+        .next()
+        .await
+        .unwrap()
+        .spawn()
+        .unwrap()
+        .testkit()
+        .unwrap()
+        .downcast::<u64>()
+        .unwrap();
 
-    let effect = child_testkit.next().await.unwrap().recv().unwrap();
-    assert!(effect.recv().is_message_and(|m| *m == 2));
-    drop(effect);
+    assert!(child_testkit
+        .next()
+        .await
+        .unwrap()
+        .is_recv_and(|recv| recv.is_message_and(|m| *m == 2)));
 
-    let effect = parent_testkit.next().await.unwrap().recv().unwrap();
-    assert!(effect.recv().is_message_and(|m| *m == 2));
-    drop(effect);
+    assert!(parent_testkit
+        .next()
+        .await
+        .unwrap()
+        .is_recv_and(|recv| recv.is_message_and(|m| *m == 2)));
 
     handle.await.unwrap();
 }
