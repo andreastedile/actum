@@ -2,13 +2,13 @@ use crate::actor_bounds::Recv;
 use futures::channel::oneshot;
 use std::fmt::{Debug, Formatter};
 
-pub struct RecvEffect<M> {
-    // wrap in Option so that it can be taken.
-    recv: Option<Recv<M>>,
-    // wrap in Option so that it can be taken.
-    recv_effect_out_m_sender: Option<oneshot::Sender<RecvEffectOut<M>>>,
-    // wrap in Option so that it can be taken.
-    recv_effect_in_m_sender: Option<oneshot::Sender<RecvEffectIn<M>>>,
+// wrap in Option so that it can be taken in Drop.
+pub struct RecvEffect<M>(Option<RecvEffectInner<M>>);
+
+pub struct RecvEffectInner<M> {
+    recv: Recv<M>,
+    recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
+    recv_effect_in_m_sender: oneshot::Sender<RecvEffectIn<M>>,
 }
 
 impl<M> RecvEffect<M> {
@@ -17,15 +17,15 @@ impl<M> RecvEffect<M> {
         recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
         recv_effect_in_m_sender: oneshot::Sender<RecvEffectIn<M>>,
     ) -> Self {
-        Self {
-            recv: Some(recv),
-            recv_effect_out_m_sender: Some(recv_effect_out_m_sender),
-            recv_effect_in_m_sender: Some(recv_effect_in_m_sender),
-        }
+        Self(Some(RecvEffectInner {
+            recv,
+            recv_effect_out_m_sender,
+            recv_effect_in_m_sender,
+        }))
     }
 
     pub fn message(&self) -> Option<&M> {
-        if let Recv::Message(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+        if let Recv::Message(m) = &self.0.as_ref().unwrap().recv {
             Some(m)
         } else {
             None
@@ -33,11 +33,11 @@ impl<M> RecvEffect<M> {
     }
 
     pub fn is_message(&self) -> bool {
-        matches!(self.recv.as_ref().expect("recv is taken in Drop"), Recv::Message(_))
+        matches!(self.0.as_ref().unwrap().recv, Recv::Message(_))
     }
 
     pub fn is_message_and(&self, f: impl FnOnce(&M) -> bool) -> bool {
-        if let Recv::Message(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+        if let Recv::Message(m) = &self.0.as_ref().unwrap().recv {
             f(m)
         } else {
             false
@@ -45,7 +45,7 @@ impl<M> RecvEffect<M> {
     }
 
     pub fn stopped(&self) -> Option<Option<&M>> {
-        if let Recv::Stopped(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+        if let Recv::Stopped(m) = &self.0.as_ref().unwrap().recv {
             Some(m.as_ref())
         } else {
             None
@@ -53,7 +53,7 @@ impl<M> RecvEffect<M> {
     }
 
     pub fn is_stopped_and(&self, f: impl FnOnce(Option<&M>) -> bool) -> bool {
-        if let Recv::Stopped(m) = self.recv.as_ref().expect("recv is taken in Drop") {
+        if let Recv::Stopped(m) = &self.0.as_ref().unwrap().recv {
             f(m.as_ref())
         } else {
             false
@@ -61,7 +61,7 @@ impl<M> RecvEffect<M> {
     }
 
     pub fn is_no_more_senders(&self) -> bool {
-        matches!(self.recv.as_ref().expect("recv is taken in Drop"), Recv::NoMoreSenders)
+        matches!(self.0.as_ref().unwrap().recv, Recv::NoMoreSenders)
     }
 }
 
@@ -87,15 +87,17 @@ impl<M> RecvEffectOut<M> {
 
 impl<M> Drop for RecvEffect<M> {
     fn drop(&mut self) {
-        if let Some(recv_effect_in_m_sender) = self.recv_effect_in_m_sender.take() {
-            let recv = self.recv.take().unwrap();
-            let effect = RecvEffectIn {
-                recv,
-                recv_effect_out_m_sender: self.recv_effect_out_m_sender.take().unwrap(),
-            };
-            if recv_effect_in_m_sender.send(effect).is_err() {
-                panic!("could not send the effect back to the actor")
-            }
+        let RecvEffectInner {
+            recv,
+            recv_effect_out_m_sender,
+            recv_effect_in_m_sender,
+        } = self.0.take().unwrap();
+        let effect = RecvEffectIn {
+            recv,
+            recv_effect_out_m_sender,
+        };
+        if recv_effect_in_m_sender.send(effect).is_err() {
+            panic!("could not send the effect back to the actor")
         }
     }
 }

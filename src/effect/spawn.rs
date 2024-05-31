@@ -4,12 +4,13 @@ use futures::channel::oneshot;
 
 use crate::testkit::{AnyTestkit, Testkit};
 
-pub struct SpawnEffect {
+// wrap in Option so that it can be taken in Drop.
+pub struct SpawnEffect(Option<SpawnEffectInner>);
+
+pub struct SpawnEffectInner {
     testkit: Option<AnyTestkit>,
-    // wrap in Option so that it can be taken.
-    spawn_effect_out_sender: Option<oneshot::Sender<SpawnEffectOut>>,
-    // wrap in Option so that it can be taken.
-    spawn_effect_in_sender: Option<oneshot::Sender<SpawnEffectIn>>,
+    spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
+    spawn_effect_in_sender: oneshot::Sender<SpawnEffectIn>,
 }
 
 impl SpawnEffect {
@@ -18,15 +19,15 @@ impl SpawnEffect {
         spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
         spawn_effect_in_sender: oneshot::Sender<SpawnEffectIn>,
     ) -> Self {
-        Self {
+        Self(Some(SpawnEffectInner {
             testkit,
-            spawn_effect_out_sender: Some(spawn_effect_out_sender),
-            spawn_effect_in_sender: Some(spawn_effect_in_sender),
-        }
+            spawn_effect_out_sender,
+            spawn_effect_in_sender,
+        }))
     }
 
     pub fn testkit(&mut self) -> Option<&mut AnyTestkit> {
-        self.testkit.as_mut()
+        self.0.as_mut().unwrap().testkit.as_mut()
     }
 }
 
@@ -55,13 +56,16 @@ impl SpawnEffectOut {
 
 impl Drop for SpawnEffect {
     fn drop(&mut self) {
-        if let Some(spawn_effect_in_sender) = self.spawn_effect_in_sender.take() {
-            let effect = SpawnEffectIn {
-                spawn_effect_out_sender: self.spawn_effect_out_sender.take().unwrap(),
-            };
-            if spawn_effect_in_sender.send(effect).is_err() {
-                panic!("could not send the effect back to the actor")
-            }
+        let SpawnEffectInner {
+            spawn_effect_out_sender,
+            spawn_effect_in_sender,
+            ..
+        } = self.0.take().unwrap();
+        let effect = SpawnEffectIn {
+            spawn_effect_out_sender,
+        };
+        if spawn_effect_in_sender.send(effect).is_err() {
+            panic!("could not send the effect back to the actor")
         }
     }
 }
