@@ -25,10 +25,16 @@ use crate::actor_cell::Stop;
 ///     let _ = root.task.run_task().await;
 /// }
 /// ```
-pub struct ActorDropGuard(#[allow(dead_code)] oneshot::Sender<Stop>);
+pub struct ActorDropGuard(Option<oneshot::Sender<Stop>>);
+
+impl Drop for ActorDropGuard {
+    fn drop(&mut self) {
+        let _ = self.0.take().unwrap().send(Stop);
+    }
+}
 
 impl ActorDropGuard {
     pub(crate) const fn new(stop_sender: oneshot::Sender<Stop>) -> Self {
-        Self(stop_sender)
+        Self(Some(stop_sender))
     }
 }

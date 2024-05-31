@@ -27,16 +27,22 @@ where
 
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
         poll_fn(|cx| {
-            if self.stop_receiver.poll_unpin(cx).is_ready() {
-                // Poll::Ready(Ok(Stop)) | Poll::Ready(Err(oneshot::Canceled))
-
-                self.m_receiver.close();
-                self.m_receiver.poll_next_unpin(cx).map(Recv::Stopped)
-            } else {
-                match self.m_receiver.poll_next_unpin(cx) {
-                    Poll::Ready(Some(m)) => Poll::Ready(Recv::Message(m)),
-                    Poll::Ready(None) => Poll::Ready(Recv::NoMoreSenders),
-                    Poll::Pending => Poll::Pending,
+            match self.stop_receiver.poll_unpin(cx) {
+                Poll::Ready(Ok(Stop)) => {
+                    self.m_receiver.close();
+                    self.m_receiver.poll_next_unpin(cx).map(Recv::Stopped)
+                }
+                Poll::Ready(Err(oneshot::Canceled)) => {
+                    //
+                    self.m_receiver.poll_next_unpin(cx).map(Recv::Stopped)
+                }
+                Poll::Pending => {
+                    //
+                    match self.m_receiver.poll_next_unpin(cx) {
+                        Poll::Ready(Some(m)) => Poll::Ready(Recv::Message(m)),
+                        Poll::Ready(None) => Poll::Ready(Recv::NoMoreSenders),
+                        Poll::Pending => Poll::Pending,
+                    }
                 }
             }
         })
