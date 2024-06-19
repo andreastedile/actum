@@ -1,0 +1,38 @@
+use std::time::Duration;
+use tracing::Instrument;
+
+use actum::prelude::*;
+
+async fn an_actor<AB>(mut cell: ActorCell<u32, AB>, _me: ActorRef<u32>)
+where
+    ActorCell<u32, AB>: ActorBounds<u32>,
+{
+    tokio::select! {
+        Recv::Message(m) = cell.recv() => {
+            tracing::info!(m);
+        }
+        _ = tokio::time::sleep(Duration::from_secs(1)) => {
+            tracing::info!("timeout");
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_span_events(
+            tracing_subscriber::fmt::format::FmtSpan::NEW | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+        )
+        .with_target(false)
+        .with_line_number(true)
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    let mut root = actum(an_actor);
+    let span = tracing::info_span!("root");
+    let handle = tokio::spawn(root.task.run_task().instrument(span));
+
+    // let _ = root.m_ref.try_send(1);
+
+    handle.await.unwrap();
+}

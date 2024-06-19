@@ -14,5 +14,5 @@ futures = "0.3.30"
 tracing = { version = "0.1.40", default-features = false }
 
 [dev-dependencies]
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
