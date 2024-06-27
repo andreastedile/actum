@@ -8,6 +8,14 @@ impl<M> Clone for ActorRef<M> {
     }
 }
 
+impl<M> PartialEq<Self> for ActorRef<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.same_receiver(&other.0)
+    }
+}
+
+impl<M> Eq for ActorRef<M> {}
+
 impl<M> ActorRef<M>
 where
     M: Send + 'static,
