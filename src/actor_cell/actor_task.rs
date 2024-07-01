@@ -1,14 +1,12 @@
 use crate::actor_cell::{ActorCell, Stopped};
 use crate::actor_ref::ActorRef;
 use futures::channel::mpsc;
-use futures::{FutureExt, StreamExt};
-use std::any::Any;
+use futures::StreamExt;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::panic;
 
 pub trait RunTask: Send + 'static {
-    fn run_task(self) -> impl Future<Output = Option<Box<dyn Any + Send>>> + Send + 'static;
+    fn run_task(self) -> impl Future<Output = ()> + Send + 'static;
 }
 
 pub struct ActorTask<M, F, Fut, CABT> {
@@ -46,48 +44,18 @@ where
     Fut: Future<Output = ()> + Send + 'static,
     CABT: Send + 'static,
 {
-    async fn run_task(mut self) -> Option<Box<dyn Any + Send>> {
-        tracing::trace!("start");
-
+    async fn run_task(mut self) {
         let f = self.f;
-        let fut = match panic::catch_unwind(panic::AssertUnwindSafe(|| f(self.cell, self.m_ref))) {
-            Ok(fut) => fut,
-            Err(error) => {
-                tracing::error!("panic");
+        let fut = f(self.cell, self.m_ref);
+        fut.await;
 
-                tracing::trace!("wait children");
-                while self.stopped_receiver.next().await.is_some() {}
+        tracing::trace!("join children");
+        while self.stopped_receiver.next().await.is_some() {}
 
-                if let Some(sender) = self.stopped_sender {
-                    sender
-                        .unbounded_send(Stopped)
-                        .expect("failed to send Stopped to parent");
-                };
-
-                return Some(error);
-            }
-        };
-
-        match panic::AssertUnwindSafe(fut).catch_unwind().await {
-            Ok(_) => {
-                tracing::trace!("wait children");
-                while self.stopped_receiver.next().await.is_some() {}
-            }
-            Err(panic) => {
-                tracing::debug!("panic");
-
-                tracing::trace!("wait children");
-                while self.stopped_receiver.next().await.is_some() {}
-
-                return Some(panic);
-            }
-        };
-
-        if let Some(sender) = self.stopped_sender {
-            sender
+        if let Some(stopped_sender) = self.stopped_sender {
+            stopped_sender
                 .unbounded_send(Stopped)
                 .expect("failed to send Stopped to parent");
-        }
-        None
+        };
     }
 }
