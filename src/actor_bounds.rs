@@ -17,7 +17,7 @@ where
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static;
+        Fut: Future<Output = Self::ChildActorBounds<M2>> + Send + 'static;
 
     /// Asynchronously receive the next message.
     ///
@@ -36,7 +36,7 @@ where
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static;
+        Fut: Future<Output = Self::ChildActorBounds<M2>> + Send + 'static;
 }
 
 pub enum Recv<M> {

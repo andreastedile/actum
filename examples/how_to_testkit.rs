@@ -3,7 +3,7 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>)
+async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>) -> AB
 where
     AB: ActorBounds<u64>,
 {
@@ -12,9 +12,7 @@ where
 
     let parent = me.clone();
     let child = cell
-        .spawn(move |cell, me| async move {
-            generic_child(cell, me, parent, m1).await;
-        })
+        .spawn(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
         .await
         .unwrap();
     let span = tracing::info_span!("child");
@@ -24,9 +22,11 @@ where
     tracing::info!(recv = m2);
 
     assert_eq!(m2, m1 * 2);
+    
+    cell
 }
 
-async fn generic_child<AB>(mut cell: AB, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64)
+async fn generic_child<AB>(mut cell: AB, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64) -> AB
 where
     AB: ActorBounds<u64>,
 {
@@ -38,6 +38,8 @@ where
 
     tracing::info!(try_send = m);
     parent.try_send(m).unwrap();
+    
+    cell
 }
 
 #[tokio::test]

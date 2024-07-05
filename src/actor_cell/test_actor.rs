@@ -2,11 +2,12 @@ use crate::actor::Actor;
 use crate::actor_bounds::{ActorBounds, Recv};
 use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::ActorCell;
-use crate::actor_cell::{Stop, Stopped};
+use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 use crate::effect::recv::{RecvEffectIn, RecvEffectOut};
 use crate::effect::spawn::{SpawnEffectIn, SpawnEffectOut};
+use crate::resolve_when_one::ResolveWhenOne;
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Either, FusedFuture};
@@ -40,7 +41,7 @@ where
     type SpawnOut<M2, F, Fut> = ActorTask<M2, F, Fut, TestBounds<M2>> where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output= ()> + Send + 'static;
+        Fut: Future<Output= ActorCell<M2, TestBounds<M2>>> + Send + 'static;
 
     async fn recv(&mut self) -> Recv<M> {
         let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
@@ -82,7 +83,7 @@ where
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ActorCell<M2, TestBounds<M2>>> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
             if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
@@ -104,23 +105,17 @@ where
         }
 
         let stop_channel = oneshot::channel::<Stop>();
-        let stopped_channel = mpsc::unbounded::<Stopped>();
         let m2_channel = mpsc::channel::<M2>(100);
 
         let guard = ActorDropGuard::new(stop_channel.0);
         let recv_effect_out_m2_channel = oneshot::channel::<RecvEffectOut<M2>>();
         let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
         let bounds = TestBounds::new(recv_effect_out_m2_channel.0, spawn_effect_out_channel.0);
-        let cell = ActorCell::new(stop_channel.1, stopped_channel.0, m2_channel.1, bounds);
+        let cell = ActorCell::new(stop_channel.1, m2_channel.1, bounds);
 
-        let m_ref = ActorRef::new(m2_channel.0);
-        let task = ActorTask::new(
-            f,
-            cell,
-            m_ref.clone(),
-            stopped_channel.1,
-            Some(self.stopped_sender.clone()),
-        );
+        let m2_ref = ActorRef::new(m2_channel.0);
+        let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
+        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
 
         if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
             let spawn_effect_in_channel = oneshot::channel::<SpawnEffectIn>();
@@ -138,6 +133,6 @@ where
             }
         }
 
-        Some(Actor::new(task, guard, m_ref))
+        Some(Actor::new(task, guard, m2_ref))
     }
 }

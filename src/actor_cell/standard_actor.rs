@@ -1,10 +1,11 @@
 use crate::actor::Actor;
 use crate::actor_bounds::{ActorBounds, Recv};
 use crate::actor_cell::actor_task::ActorTask;
+use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
-use crate::actor_cell::{ActorCell, Stopped};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
+use crate::resolve_when_one::ResolveWhenOne;
 use futures::channel::{mpsc, oneshot};
 use futures::future::FusedFuture;
 use futures::stream::FusedStream;
@@ -23,7 +24,7 @@ where
     type SpawnOut<M2, F, Fut> = ActorTask<M2, F, Fut, StandardBounds> where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static;
+        Fut: Future<Output = ActorCell<M2, StandardBounds>> + Send + 'static;
 
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
         poll_fn(|cx| {
@@ -52,28 +53,22 @@ where
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ActorCell<M2, StandardBounds>> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
             return None;
         }
 
         let stop_channel = oneshot::channel::<Stop>();
-        let stopped_channel = mpsc::unbounded::<Stopped>();
         let m2_channel = mpsc::channel::<M2>(100);
 
         let guard = ActorDropGuard::new(stop_channel.0);
         let bounds = StandardBounds;
-        let cell = ActorCell::new(stop_channel.1, stopped_channel.0, m2_channel.1, bounds);
+        let cell = ActorCell::new(stop_channel.1, m2_channel.1, bounds);
 
         let m2_ref = ActorRef::new(m2_channel.0);
-        let task = ActorTask::new(
-            f,
-            cell,
-            m2_ref.clone(),
-            stopped_channel.1,
-            Some(self.stopped_sender.clone()),
-        );
+        let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
+        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
 
         Some(Actor::new(task, guard, m2_ref))
     }

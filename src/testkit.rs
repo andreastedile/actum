@@ -1,7 +1,7 @@
 use crate::actor::Actor;
 use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::test_actor::TestBounds;
-use crate::actor_cell::{ActorCell, Stop, Stopped};
+use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 use crate::effect::recv::{RecvEffect, RecvEffectOut};
@@ -175,20 +175,19 @@ pub fn testkit<M, F, Fut>(f: F) -> (Actor<M, ActorTask<M, F, Fut, TestBounds<M>>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<M, TestBounds<M>>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
+    Fut: Future<Output = ActorCell<M, TestBounds<M>>> + Send + 'static,
 {
     let stop_channel = oneshot::channel::<Stop>();
-    let stopped_channel = mpsc::unbounded::<Stopped>();
     let m_channel = mpsc::channel::<M>(100);
     let recv_effect_out_m_channel = oneshot::channel::<RecvEffectOut<M>>();
     let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
 
     let guard = ActorDropGuard::new(stop_channel.0);
     let bounds = TestBounds::new(recv_effect_out_m_channel.0, spawn_effect_out_channel.0);
-    let cell = ActorCell::new(stop_channel.1, stopped_channel.0, m_channel.1, bounds);
+    let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
 
     let m_ref = ActorRef::new(m_channel.0);
-    let task = ActorTask::new(f, cell, m_ref.clone(), stopped_channel.1, None);
+    let task = ActorTask::new(f, cell, m_ref.clone(), None);
     let testkit = Testkit::new(recv_effect_out_m_channel.1, spawn_effect_out_channel.1);
 
     (Actor::new(task, guard, m_ref), testkit)

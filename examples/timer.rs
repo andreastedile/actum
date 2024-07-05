@@ -3,9 +3,9 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn an_actor<AB>(mut cell: ActorCell<u32, AB>, _me: ActorRef<u32>)
+async fn an_actor<AB>(mut cell: AB, _me: ActorRef<u32>) -> AB
 where
-    ActorCell<u32, AB>: ActorBounds<u32>,
+    AB: ActorBounds<u32>,
 {
     tokio::select! {
         Recv::Message(m) = cell.recv() => {
@@ -15,6 +15,8 @@ where
             tracing::info!("timeout");
         }
     }
+
+    cell
 }
 
 #[tokio::main]
