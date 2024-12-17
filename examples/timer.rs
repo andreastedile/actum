@@ -3,7 +3,7 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn an_actor<AB>(mut cell: AB, _me: ActorRef<u32>) -> AB
+async fn an_actor<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
 where
     AB: ActorBounds<u32>,
 {
@@ -16,7 +16,7 @@ where
         }
     }
 
-    cell
+    (cell, ())
 }
 
 #[tokio::main]

@@ -21,10 +21,13 @@ where
 {
     type ChildActorBoundsType<M2: Send + 'static> = StandardBounds;
     type ChildActorBounds<M2: Send + 'static> = ActorCell<M2, StandardBounds>;
-    type SpawnOut<M2, F, Fut> = ActorTask<M2, F, Fut, StandardBounds> where
+    type SpawnOut<M2, F, Fut, Ret>
+        = ActorTask<M2, F, Fut, Ret, StandardBounds>
+    where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ActorCell<M2, StandardBounds>> + Send + 'static;
+        Fut: Future<Output = (ActorCell<M2, StandardBounds>, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
         poll_fn(|cx| {
@@ -49,11 +52,11 @@ where
         })
     }
 
-    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, StandardBounds>>>
+    async fn spawn<M2, F, Fut, Ret>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, Ret, StandardBounds>>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ActorCell<M2, StandardBounds>> + Send + 'static,
+        Fut: Future<Output = (ActorCell<M2, StandardBounds>, Ret)> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
             return None;

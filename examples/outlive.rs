@@ -3,7 +3,7 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn parent<AB>(mut cell: AB, _me: ActorRef<()>) -> AB
+async fn parent<AB>(mut cell: AB, _me: ActorRef<()>) -> (AB, ())
 where
     AB: ActorBounds<()>,
 {
@@ -11,16 +11,16 @@ where
     let span = tracing::info_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
-    cell // the child is sleeping; try to return immediately and see what happens.
+    (cell, ()) // the child is sleeping; try to return immediately and see what happens.
 }
 
-async fn child<AB>(cell: AB, _me: ActorRef<()>) -> AB
+async fn child<AB>(cell: AB, _me: ActorRef<()>) -> (AB, ())
 where
     AB: ActorBounds<()>,
 {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    cell
+    (cell, ())
 }
 
 #[tokio::main]

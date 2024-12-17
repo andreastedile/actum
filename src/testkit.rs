@@ -64,20 +64,22 @@ use std::task::{Context, Poll};
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn parent<AB>(mut cell: AB, me: ActorRef<u64>)
+/// async fn parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
 ///     let child = cell.spawn(child).await.unwrap();
 ///     let handle = tokio::spawn(child.task.run_task());
 ///     handle.await.unwrap();
+///     (cell, ())
 /// }
 ///
-/// async fn child<AB>(mut cell: AB, me: ActorRef<u32>)
+/// async fn child<AB>(mut cell: AB, me: ActorRef<u32>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u32>,
 /// {
 ///     println!("child");
+///     (cell, ())
 /// }
 ///
 /// #[tokio::test]
@@ -171,11 +173,12 @@ impl AnyTestkit {
     }
 }
 
-pub fn testkit<M, F, Fut>(f: F) -> (Actor<M, ActorTask<M, F, Fut, TestBounds<M>>>, Testkit<M>)
+pub fn testkit<M, F, Fut, Ret>(f: F) -> (Actor<M, ActorTask<M, F, Fut, Ret, TestBounds<M>>>, Testkit<M>)
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<M, TestBounds<M>>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = ActorCell<M, TestBounds<M>>> + Send + 'static,
+    Fut: Future<Output = (ActorCell<M, TestBounds<M>>, Ret)> + Send + 'static,
+    Ret: Send + 'static,
 {
     let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);

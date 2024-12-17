@@ -8,13 +8,14 @@ use crate::actor_cell::Stop;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>)
+/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
 ///     while let Recv::Message(m) = cell.recv().await {
 ///         println!("{}", m);
 ///     }
+///     (cell, ())
 /// }
 ///
 /// #[tokio::main]

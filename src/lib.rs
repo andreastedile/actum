@@ -27,12 +27,13 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>)
+/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
 ///     let m = cell.recv().await.message().unwrap();
 ///     println!("{}", m);
+///     (cell, ())
 /// }
 ///
 /// #[tokio::main]
@@ -49,9 +50,10 @@ pub mod testkit;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut root = actum::<u64, _, _>(|mut cell, me| async move {
+///     let mut root = actum::<u64, _, _, _>(|mut cell, me| async move {
 ///         let m = cell.recv().await.message().unwrap();
 ///         println!("{}", m);
+///         (cell, ())
 ///     });
 ///     root.m_ref.try_send(1).unwrap();
 ///     root.task.run_task().await;
@@ -62,7 +64,7 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<AB>(mut cell: AB, me: ActorRef<u64>, mut vec: Vec<u64>)
+/// async fn root<AB>(mut cell: AB, me: ActorRef<u64>, mut vec: Vec<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
@@ -71,6 +73,7 @@ pub mod testkit;
 ///     for m in vec {
 ///         println!("{}", m);
 ///     }
+///     (cell, ())
 /// }
 ///
 /// #[tokio::main]
@@ -81,11 +84,12 @@ pub mod testkit;
 ///     root.task.run_task().await;
 /// }
 /// ```
-pub fn actum<M, F, Fut>(f: F) -> Actor<M, ActorTask<M, F, Fut, StandardBounds>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> Actor<M, ActorTask<M, F, Fut, Ret, StandardBounds>>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<M, StandardBounds>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = ActorCell<M, StandardBounds>> + Send + 'static,
+    Fut: Future<Output = (ActorCell<M, StandardBounds>, Ret)> + Send + 'static,
+    Ret: Send + 'static,
 {
     let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);

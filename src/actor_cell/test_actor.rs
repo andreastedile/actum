@@ -38,10 +38,13 @@ where
 {
     type ChildActorBoundsType<M2: Send + 'static> = TestBounds<M2>;
     type ChildActorBounds<M2: Send + 'static> = ActorCell<M2, TestBounds<M2>>;
-    type SpawnOut<M2, F, Fut> = ActorTask<M2, F, Fut, TestBounds<M2>> where
+    type SpawnOut<M2, F, Fut, Ret>
+        = ActorTask<M2, F, Fut, Ret, TestBounds<M2>>
+    where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output= ActorCell<M2, TestBounds<M2>>> + Send + 'static;
+        Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 
     async fn recv(&mut self) -> Recv<M> {
         let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
@@ -79,11 +82,11 @@ where
         }
     }
 
-    async fn spawn<M2, F, Fut>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, TestBounds<M2>>>>
+    async fn spawn<M2, F, Fut, Ret>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = ActorCell<M2, TestBounds<M2>>> + Send + 'static,
+        Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
             if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {

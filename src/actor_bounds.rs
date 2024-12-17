@@ -13,11 +13,12 @@ where
     type ChildActorBounds<M2>: ActorBounds<M2>
     where
         M2: Send + 'static;
-    type SpawnOut<M2, F, Fut>: RunTask
+    type SpawnOut<M2, F, Fut, Ret>: RunTask<Ret>
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = Self::ChildActorBounds<M2>> + Send + 'static;
+        Fut: Future<Output = (Self::ChildActorBounds<M2>, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 
     /// Asynchronously receive the next message.
     ///
@@ -29,14 +30,15 @@ where
     ///
     /// This method returns `None` when the actor has been stopped by its parent or when all its [ActorRef]s have been dropped.
     /// After that this method has returned `None`, subsequent calls to the method will continue to do so.
-    fn spawn<M2, F, Fut>(
+    fn spawn<M2, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = Option<Actor<M2, Self::SpawnOut<M2, F, Fut>>>> + Send + '_
+    ) -> impl Future<Output = Option<Actor<M2, Self::SpawnOut<M2, F, Fut, Ret>>>> + Send + '_
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = Self::ChildActorBounds<M2>> + Send + 'static;
+        Fut: Future<Output = (Self::ChildActorBounds<M2>, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 }
 
 pub enum Recv<M> {
