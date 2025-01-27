@@ -5,29 +5,39 @@ use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
-use crate::effect::recv::{RecvEffectIn, RecvEffectOut};
-use crate::effect::spawn::{SpawnEffectIn, SpawnEffectOut};
 use crate::resolve_when_one::ResolveWhenOne;
-use crate::testkit::Testkit;
+use crate::testkit::{AnyTestkit, Testkit};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Either, FusedFuture};
 use futures::stream::FusedStream;
-use futures::{future, StreamExt};
+use futures::{future, SinkExt, StreamExt};
 use std::future::Future;
 
 pub struct TestBounds<M> {
-    recv_effect_out_m_sender: Option<oneshot::Sender<RecvEffectOut<M>>>,
-    spawn_effect_out_sender: Option<oneshot::Sender<SpawnEffectOut>>,
+    /// Used to send a [Recv] to the [Testkit].
+    /// See [ActorBounds::recv].
+    recv_m_sender: mpsc::Sender<Recv<M>>,
+    /// Used to receive the [Recv] back from the [Testkit] to which it was sent.
+    recv_m_receiver: mpsc::Receiver<Recv<M>>,
+    /// Used to send the optional [Testkit] of a child actor to the [Testkit].
+    /// See [ActorBounds::spawn].
+    testkit_sender: mpsc::Sender<Option<AnyTestkit>>,
+    /// Used to receive a confirmation back from the [Testkit] to which the [Testkit] of the child actor was sent.
+    testkit_receiver: mpsc::Receiver<()>,
 }
 
 impl<M> TestBounds<M> {
     pub const fn new(
-        recv_effect_out_m_sender: oneshot::Sender<RecvEffectOut<M>>,
-        spawn_effect_out_sender: oneshot::Sender<SpawnEffectOut>,
+        recv_m_sender: mpsc::Sender<Recv<M>>,
+        recv_m_receiver: mpsc::Receiver<Recv<M>>,
+        testkit_sender: mpsc::Sender<Option<AnyTestkit>>,
+        testkit_receiver: mpsc::Receiver<()>,
     ) -> Self {
         Self {
-            recv_effect_out_m_sender: Some(recv_effect_out_m_sender),
-            spawn_effect_out_sender: Some(spawn_effect_out_sender),
+            recv_m_sender,
+            recv_m_receiver,
+            testkit_sender,
+            testkit_receiver,
         }
     }
 }
@@ -50,36 +60,29 @@ where
         let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
         let recv = match select {
-            Either::Left(_) => {
+            Either::Left(_) /* (Result<Stop, Canceled>, Next<Receiver<M>>) */ => {
                 self.m_receiver.close();
-                // let m = self.m_receiver.try_next().expect("channel is closed");
-                // Recv::Stopped(m)
-                let m = self.m_receiver.try_next().expect("channel is closed");
+                let m = self.m_receiver.try_next().expect("the message receiver should stay open as long as the stop receiver");
                 Recv::Stopped(m)
             }
             Either::Right((Some(m), _)) => Recv::Message(m),
             Either::Right((None, _)) => Recv::NoMoreSenders,
         };
 
-        if let Some(recv_effect_out_m_sender) = self.bounds.recv_effect_out_m_sender.take() {
-            let recv_effect_in_m_channel = oneshot::channel::<RecvEffectIn<M>>();
-            let effect = RecvEffectOut::new(recv, recv_effect_in_m_channel.0);
+        self.bounds
+            .recv_m_sender
+            .send(recv)
+            .await
+            .expect("could not send the Recv to the testkit");
 
-            if let Err(RecvEffectOut { recv: m, .. }) = recv_effect_out_m_sender.send(effect) {
-                // The testkit dropped.
-                m
-            } else {
-                let RecvEffectIn {
-                    recv,
-                    recv_effect_out_m_sender,
-                } = recv_effect_in_m_channel.1.await.expect("the effect should reply");
+        let recv = self
+            .bounds
+            .recv_m_receiver
+            .next()
+            .await
+            .expect("could not receive the Recv back from the testkit");
 
-                self.bounds.recv_effect_out_m_sender = Some(recv_effect_out_m_sender);
-                recv
-            }
-        } else {
-            recv
-        }
+        recv
     }
 
     async fn spawn<M2, F, Fut, Ret>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>>
@@ -89,20 +92,18 @@ where
         Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
     {
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
-            if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
-                let spawn_effect_in_channel = oneshot::channel::<SpawnEffectIn>();
-                let effect = SpawnEffectOut::new::<M2>(None, spawn_effect_in_channel.0);
+            self.bounds
+                .testkit_sender
+                .send(None)
+                .await
+                .expect("could not send to the testkit");
 
-                if let Err(SpawnEffectOut { .. }) = spawn_effect_out_sender.send(effect) {
-                    // The testkit dropped.
-                } else {
-                    let SpawnEffectIn {
-                        spawn_effect_out_sender,
-                    } = spawn_effect_in_channel.1.await.expect("the effect should reply");
-
-                    self.bounds.spawn_effect_out_sender = Some(spawn_effect_out_sender);
-                }
-            }
+            let _ = self
+                .bounds
+                .testkit_receiver
+                .next()
+                .await
+                .expect("cold not receive back from the testkit");
 
             return None;
         }
@@ -111,30 +112,40 @@ where
         let m2_channel = mpsc::channel::<M2>(100);
 
         let guard = ActorDropGuard::new(stop_channel.0);
-        let recv_effect_out_m2_channel = oneshot::channel::<RecvEffectOut<M2>>();
-        let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
-        let bounds = TestBounds::new(recv_effect_out_m2_channel.0, spawn_effect_out_channel.0);
+        let recv_m_channel_out = mpsc::channel::<Recv<M2>>(1);
+        let recv_m_channel_in = mpsc::channel::<Recv<M2>>(1);
+        let testkit_channel_out = mpsc::channel::<Option<AnyTestkit>>(1);
+        let testkit_channel_in = mpsc::channel::<()>(1);
+        let bounds = TestBounds::new(
+            recv_m_channel_out.0,
+            recv_m_channel_in.1,
+            testkit_channel_out.0,
+            testkit_channel_in.1,
+        );
         let cell = ActorCell::new(stop_channel.1, m2_channel.1, bounds);
 
         let m2_ref = ActorRef::new(m2_channel.0);
         let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
         let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
 
-        if let Some(spawn_effect_out_sender) = self.bounds.spawn_effect_out_sender.take() {
-            let spawn_effect_in_channel = oneshot::channel::<SpawnEffectIn>();
-            let testkit = Testkit::new(recv_effect_out_m2_channel.1, spawn_effect_out_channel.1);
-            let effect = SpawnEffectOut::new(Some(testkit), spawn_effect_in_channel.0);
+        let testkit = Testkit::new(
+            recv_m_channel_out.1,
+            recv_m_channel_in.0,
+            testkit_channel_out.1,
+            testkit_channel_in.0,
+        );
 
-            if let Err(SpawnEffectOut { .. }) = spawn_effect_out_sender.send(effect) {
-                // The testkit dropped.
-            } else {
-                let SpawnEffectIn {
-                    spawn_effect_out_sender,
-                } = spawn_effect_in_channel.1.await.expect("the effect should reply");
+        self.bounds
+            .testkit_sender
+            .send(Some(AnyTestkit::from(testkit)))
+            .await
+            .expect("could not send the child actor testkit to the testkit");
 
-                self.bounds.spawn_effect_out_sender = Some(spawn_effect_out_sender);
-            }
-        }
+        self.bounds
+            .testkit_receiver
+            .next()
+            .await
+            .expect("cold not receive back from the testkit");
 
         Some(Actor::new(task, guard, m2_ref))
     }

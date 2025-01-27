@@ -1,7 +1,7 @@
+use actum::effect::EffectExecution;
+use actum::prelude::*;
 use futures::StreamExt;
 use tracing::Instrument;
-
-use actum::prelude::*;
 
 async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
 where
@@ -61,34 +61,37 @@ async fn test() {
 
     parent.m_ref.try_send(1).unwrap();
 
-    assert!(parent_testkit
-        .next()
-        .await
-        .unwrap()
-        .is_recv_and(|recv| recv.is_message_and(|m| *m == 1)));
+    parent_testkit
+        .test_next_effect(|effect| {
+            let recv = effect.unwrap_message();
+            assert_eq!(recv.m, 1);
+            (recv.execute(), ())
+        })
+        .await;
 
     let mut child_testkit = parent_testkit
-        .next()
-        .await
-        .unwrap()
-        .spawn()
-        .unwrap()
-        .testkit()
-        .unwrap()
-        .downcast::<u64>()
-        .unwrap();
+        .test_next_effect(|effect| {
+            let mut spawn = effect.unwrap_spawn();
+            let testkit = spawn.unwrap_testkit().downcast_unwrap::<u64>();
+            (spawn.execute(), testkit)
+        })
+        .await;
 
-    assert!(child_testkit
-        .next()
-        .await
-        .unwrap()
-        .is_recv_and(|recv| recv.is_message_and(|m| *m == 2)));
+    child_testkit
+        .test_next_effect(|effect| {
+            let recv_m = effect.unwrap_message();
+            assert_eq!(recv_m.m, 2);
+            (recv_m.execute(), ())
+        })
+        .await;
 
-    assert!(parent_testkit
-        .next()
-        .await
-        .unwrap()
-        .is_recv_and(|recv| recv.is_message_and(|m| *m == 2)));
+    parent_testkit
+        .test_next_effect(|effect| {
+            let recv_m = effect.unwrap_message();
+            assert_eq!(recv_m.m, 2);
+            (recv_m.execute(), ())
+        })
+        .await;
 
     handle.await.unwrap();
 }

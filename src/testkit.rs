@@ -4,18 +4,19 @@ use crate::actor_cell::test_actor::TestBounds;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
-use crate::effect::recv::{RecvEffect, RecvEffectOut};
-use crate::effect::spawn::{SpawnEffect, SpawnEffectOut};
-use crate::effect::Effect;
 
+use crate::actor_bounds::Recv;
+use crate::effect::{
+    EffectExecutionWitness, EffectType, RecvMessageEffect, RecvNoMoreSendersEffect, RecvStoppedEffect, ReturnedEffect,
+    SpawnEffect,
+};
 use futures::channel::{mpsc, oneshot};
-use futures::{FutureExt, Stream};
+use futures::future::Either;
+use futures::{future, StreamExt};
 use std::any::Any;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
-/// Receive and test actor [effects](Effect).
+/// Receive and test actor [effects](EffectType).
 ///
 /// # Examples
 ///
@@ -96,53 +97,76 @@ use std::task::{Context, Poll};
 /// }
 /// ```
 pub struct Testkit<M> {
-    recv_effect_out_m_receiver: oneshot::Receiver<RecvEffectOut<M>>,
-    spawn_effect_out_receiver: oneshot::Receiver<SpawnEffectOut>,
-}
-
-impl<M> Stream for Testkit<M> {
-    type Item = Effect<M>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.recv_effect_out_m_receiver.poll_unpin(cx) {
-            Poll::Ready(Ok(effect)) => {
-                let recv_effect_out_m_channel = oneshot::channel::<RecvEffectOut<M>>();
-                self.recv_effect_out_m_receiver = recv_effect_out_m_channel.1;
-                let effect = RecvEffect::new(effect.recv, recv_effect_out_m_channel.0, effect.recv_effect_in_m_sender);
-                return Poll::Ready(Some(Effect::Recv(effect)));
-            }
-            Poll::Ready(Err(_)) => return Poll::Ready(None),
-            Poll::Pending => {}
-        }
-
-        match self.spawn_effect_out_receiver.poll_unpin(cx) {
-            Poll::Ready(Ok(mut effect)) => {
-                let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
-                self.spawn_effect_out_receiver = spawn_effect_out_channel.1;
-                let effect = SpawnEffect::new(
-                    effect.testkit.take(),
-                    spawn_effect_out_channel.0,
-                    effect.spawn_effect_in_sender,
-                );
-                return Poll::Ready(Some(Effect::Spawn(effect)));
-            }
-            Poll::Ready(Err(_)) => return Poll::Ready(None),
-            Poll::Pending => {}
-        }
-
-        Poll::Pending
-    }
+    /// Used to send a [Recv] from the actor.
+    /// See [ActorBounds::recv].
+    recv_m_receiver: mpsc::Receiver<Recv<M>>,
+    /// Used to send the [Recv] back to the actor from which it was received.
+    recv_m_sender: mpsc::Sender<Recv<M>>,
+    /// Used to receive the optional [Testkit] of a child actor from the actor.
+    /// See [ActorBounds::spawn].
+    testkit_receiver: mpsc::Receiver<Option<AnyTestkit>>,
+    /// Used to receive a confirmation back to the actor from which the [Testkit] of the child actor was received.
+    testkit_sender: mpsc::Sender<()>,
 }
 
 impl<M> Testkit<M> {
-    pub(crate) fn new(
-        recv_effect_out_m_receiver: oneshot::Receiver<RecvEffectOut<M>>,
-        spawn_effect_out_receiver: oneshot::Receiver<SpawnEffectOut>,
+    pub fn new(
+        recv_m_receiver: mpsc::Receiver<Recv<M>>,
+        recv_m_sender: mpsc::Sender<Recv<M>>,
+        testkit_receiver: mpsc::Receiver<Option<AnyTestkit>>,
+        testkit_sender: mpsc::Sender<()>,
     ) -> Self {
         Self {
-            recv_effect_out_m_receiver,
-            spawn_effect_out_receiver,
+            recv_m_receiver,
+            recv_m_sender,
+            testkit_receiver,
+            testkit_sender,
         }
+    }
+
+    /// Receive an effect from the actor and test it.
+    /// 
+    /// To enforce that the received effect is executed without being dropped, it is made necessary to
+    /// call the [execute](super::effect::EffectExecution::execute) method of the effect and return the result from
+    /// the closure, as the result is not otherwise constructible by the user.
+    pub async fn test_next_effect<'a, 'm, T>(
+        &'a mut self,
+        handler: impl FnOnce(EffectType<'m, M>) -> (EffectExecutionWitness, T),
+    ) -> T
+    where
+        'a: 'm,
+        M: Send + 'static,
+    {
+        let select = future::select(self.recv_m_receiver.next(), self.testkit_receiver.next()).await;
+        let effect: EffectType<M> = match select {
+            Either::Left((inner, _)) => {
+                //
+                match inner {
+                    None => EffectType::Returned(ReturnedEffect),
+                    Some(Recv::Message(m)) => EffectType::Message(RecvMessageEffect::new(&mut self.recv_m_sender, m)),
+                    Some(Recv::Stopped(Some(m))) => {
+                        EffectType::Stopped(RecvStoppedEffect::new(&mut self.recv_m_sender, Some(m)))
+                    }
+                    Some(Recv::Stopped(None)) => {
+                        EffectType::Stopped(RecvStoppedEffect::new(&mut self.recv_m_sender, None))
+                    }
+                    Some(Recv::NoMoreSenders) => {
+                        EffectType::NoMoreSenders(RecvNoMoreSendersEffect::new(&mut self.recv_m_sender))
+                    }
+                }
+            }
+            Either::Right((inner, _)) => {
+                //
+                match inner {
+                    None => EffectType::Returned(ReturnedEffect),
+                    Some(None) => EffectType::Spawn(SpawnEffect::new(&mut self.testkit_sender, None)),
+                    Some(Some(testkit)) => EffectType::Spawn(SpawnEffect::new(&mut self.testkit_sender, Some(testkit))),
+                }
+            }
+        };
+
+        let (_witness, t) = handler(effect);
+        t
     }
 }
 
@@ -171,6 +195,13 @@ impl AnyTestkit {
             }
         }
     }
+
+    pub fn downcast_unwrap<M: 'static>(&mut self) -> Testkit<M> {
+        self.downcast().expect(&format!(
+            "testkit is not downcastable to {}",
+            std::any::type_name::<M>()
+        ))
+    }
 }
 
 pub fn testkit<M, F, Fut, Ret>(f: F) -> (Actor<M, ActorTask<M, F, Fut, Ret, TestBounds<M>>>, Testkit<M>)
@@ -182,16 +213,28 @@ where
 {
     let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);
-    let recv_effect_out_m_channel = oneshot::channel::<RecvEffectOut<M>>();
-    let spawn_effect_out_channel = oneshot::channel::<SpawnEffectOut>();
 
     let guard = ActorDropGuard::new(stop_channel.0);
-    let bounds = TestBounds::new(recv_effect_out_m_channel.0, spawn_effect_out_channel.0);
+    let recv_m_channel_out = mpsc::channel::<Recv<M>>(1);
+    let recv_m_channel_in = mpsc::channel::<Recv<M>>(1);
+    let testkit_channel_out = mpsc::channel::<Option<AnyTestkit>>(1);
+    let testkit_channel_in = mpsc::channel::<()>(1);
+    let bounds = TestBounds::new(
+        recv_m_channel_out.0,
+        recv_m_channel_in.1,
+        testkit_channel_out.0,
+        testkit_channel_in.1,
+    );
     let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
 
     let m_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, m_ref.clone(), None);
-    let testkit = Testkit::new(recv_effect_out_m_channel.1, spawn_effect_out_channel.1);
+    let testkit = Testkit::new(
+        recv_m_channel_out.1,
+        recv_m_channel_in.0,
+        testkit_channel_out.1,
+        testkit_channel_in.0,
+    );
 
     (Actor::new(task, guard, m_ref), testkit)
 }
