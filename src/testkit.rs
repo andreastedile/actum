@@ -7,8 +7,7 @@ use crate::drop_guard::ActorDropGuard;
 
 use crate::actor_bounds::Recv;
 use crate::effect::{
-    EffectExecutionWitness, EffectType, RecvMessageEffect, RecvNoMoreSendersEffect, RecvStoppedEffect, ReturnedEffect,
-    SpawnEffect,
+    EffectType, RecvMessageEffect, RecvNoMoreSendersEffect, RecvStoppedEffect, ReturnedEffect, SpawnEffect,
 };
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
@@ -125,14 +124,11 @@ impl<M> Testkit<M> {
     }
 
     /// Receive an effect from the actor and test it.
-    /// 
+    ///
     /// To enforce that the received effect is executed without being dropped, it is made necessary to
     /// call the [execute](super::effect::EffectExecution::execute) method of the effect and return the result from
     /// the closure, as the result is not otherwise constructible by the user.
-    pub async fn test_next_effect<'a, 'm, T>(
-        &'a mut self,
-        handler: impl FnOnce(EffectType<'m, M>) -> (EffectExecutionWitness, T),
-    ) -> T
+    pub async fn test_next_effect<'a, 'm, T>(&'a mut self, handler: impl FnOnce(&EffectType<'m, M>) -> T) -> T
     where
         'a: 'm,
         M: Send + 'static,
@@ -165,7 +161,36 @@ impl<M> Testkit<M> {
             }
         };
 
-        let (_witness, t) = handler(effect);
+        let t = handler(&effect);
+
+        match effect {
+            EffectType::Stopped(inner) => {
+                inner
+                    .recv_effect_out_m_sender
+                    .try_send(Recv::Stopped(inner.m))
+                    .expect("could not send effect back to actor");
+            }
+            EffectType::Message(inner) => {
+                inner
+                    .recv_effect_out_m_sender
+                    .try_send(Recv::Message(inner.m))
+                    .expect("could not send effect back to actor");
+            }
+            EffectType::NoMoreSenders(inner) => {
+                inner
+                    .recv_effect_out_m_sender
+                    .try_send(Recv::NoMoreSenders)
+                    .expect("could not send effect back to actor");
+            }
+            EffectType::Spawn(inner) => {
+                inner
+                    .spawn_effect_out_sender
+                    .try_send(())
+                    .expect("could not send effect back to actor");
+            }
+            EffectType::Returned(_) => {}
+        }
+
         t
     }
 }

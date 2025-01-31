@@ -3,9 +3,7 @@ use crate::testkit::AnyTestkit;
 use futures::channel::mpsc;
 use std::fmt::{Debug, Formatter};
 
-/// An actor that calls the [recv](crate::actor_bounds::ActorBounds::recv) or [spawn](crate::actor_bounds::ActorBounds::spawn) methods
-/// sends the corresponding effect to the [Testkit](crate::testkit::Testkit) and suspends
-/// until the effect is tested and dropped.
+/// TODO
 pub enum EffectType<'a, M> {
     Stopped(RecvStoppedEffect<'a, M>),
     Message(RecvMessageEffect<'a, M>),
@@ -26,48 +24,29 @@ impl<'a, M> Debug for EffectType<'a, M> {
     }
 }
 
-/// A witness that the [EffectExecution::execute] method has been called on an effect.
-pub struct EffectExecutionWitness {
-    _private: (),
-}
-
-pub trait EffectExecution {
-    fn execute(self) -> EffectExecutionWitness;
-}
-
 impl<'a, M> EffectType<'a, M> {
-    pub fn unwrap_message(self) -> RecvMessageEffect<'a, M> {
+    pub fn unwrap_message(&'a mut self) -> &'a mut RecvMessageEffect<'a, M> {
         match self {
             EffectType::Message(inner) => inner,
             other => panic!("called `EffectType::unwrap_message()` on a `{:?}` value", other),
         }
     }
 
-    pub fn unwrap_stopped(self) -> RecvStoppedEffect<'a, M> {
+    pub fn unwrap_stopped(&'a mut self) -> &'a mut RecvStoppedEffect<'a, M> {
         match self {
             EffectType::Stopped(inner) => inner,
             other => panic!("called `EffectType::unwrap_stopped()` on a `{:?}` value", other),
         }
     }
 
-    pub fn unwrap_no_more_senders(self) -> RecvNoMoreSendersEffect<'a, M> {
+    pub fn unwrap_no_more_senders(&'a mut self) -> &'a mut RecvNoMoreSendersEffect<'a, M> {
         match self {
             EffectType::NoMoreSenders(inner) => inner,
             other => panic!("called `EffectType::unwrap_no_more_senders()` on a `{:?}` value", other),
         }
     }
 
-    pub fn execute(self) -> EffectExecutionWitness {
-        match self {
-            EffectType::Stopped(inner) => inner.execute(),
-            EffectType::Message(inner) => inner.execute(),
-            EffectType::NoMoreSenders(inner) => inner.execute(),
-            EffectType::Spawn(inner) => inner.execute(),
-            EffectType::Returned(inner) => inner.execute(),
-        }
-    }
-
-    pub fn unwrap_spawn(self) -> SpawnEffect<'a> {
+    pub fn unwrap_spawn(&'a mut self) -> &'a mut SpawnEffect<'a> {
         match self {
             EffectType::Spawn(inner) => inner,
             other => panic!("called `Effect::unwrap_spawn()` on a `{:?}` value", other),
@@ -80,21 +59,21 @@ impl<'a, M> EffectType<'a, M> {
 }
 
 pub struct RecvMessageEffect<'a, M> {
-    recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
+    pub(crate) recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
     pub m: M,
 }
 
 pub struct RecvStoppedEffect<'a, M> {
-    recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
+    pub(crate) recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
     pub m: Option<M>,
 }
 
 pub struct RecvNoMoreSendersEffect<'a, M> {
-    recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
+    pub(crate) recv_effect_out_m_sender: &'a mut mpsc::Sender<Recv<M>>,
 }
 
 pub struct SpawnEffect<'a> {
-    spawn_effect_out_sender: &'a mut mpsc::Sender<()>,
+    pub(crate) spawn_effect_out_sender: &'a mut mpsc::Sender<()>,
     pub testkit: Option<AnyTestkit>,
 }
 
@@ -136,47 +115,5 @@ impl<'a> SpawnEffect<'a> {
 
     pub fn unwrap_testkit(&mut self) -> AnyTestkit {
         self.testkit.take().unwrap()
-    }
-}
-
-impl<'a, M> EffectExecution for RecvMessageEffect<'a, M> {
-    fn execute(self) -> EffectExecutionWitness {
-        self.recv_effect_out_m_sender
-            .try_send(Recv::Message(self.m))
-            .expect("could not send effect back to actor");
-        EffectExecutionWitness { _private: () }
-    }
-}
-
-impl<'a, M> EffectExecution for RecvStoppedEffect<'a, M> {
-    fn execute(self) -> EffectExecutionWitness {
-        self.recv_effect_out_m_sender
-            .try_send(Recv::Stopped(self.m))
-            .expect("could not send effect back to actor");
-        EffectExecutionWitness { _private: () }
-    }
-}
-
-impl<'a, M> EffectExecution for RecvNoMoreSendersEffect<'a, M> {
-    fn execute(self) -> EffectExecutionWitness {
-        self.recv_effect_out_m_sender
-            .try_send(Recv::NoMoreSenders)
-            .expect("could not send effect back to actor");
-        EffectExecutionWitness { _private: () }
-    }
-}
-
-impl<'a> EffectExecution for SpawnEffect<'a> {
-    fn execute(self) -> EffectExecutionWitness {
-        self.spawn_effect_out_sender
-            .try_send(())
-            .expect("could not send effect back to actor");
-        EffectExecutionWitness { _private: () }
-    }
-}
-
-impl EffectExecution for ReturnedEffect {
-    fn execute(self) -> EffectExecutionWitness {
-        EffectExecutionWitness { _private: () }
     }
 }

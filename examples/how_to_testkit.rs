@@ -1,4 +1,3 @@
-use actum::effect::EffectExecution;
 use actum::prelude::*;
 use futures::StreamExt;
 use tracing::Instrument;
@@ -62,34 +61,31 @@ async fn test() {
     parent.m_ref.try_send(1).unwrap();
 
     parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(|mut effect| {
             let recv = effect.unwrap_message();
             assert_eq!(recv.m, 1);
-            (recv.execute(), ())
         })
         .await;
 
     let mut child_testkit = parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(|mut effect| {
             let mut spawn = effect.unwrap_spawn();
             let testkit = spawn.unwrap_testkit().downcast_unwrap::<u64>();
-            (spawn.execute(), testkit)
+            testkit
         })
         .await;
 
     child_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(|mut effect| {
             let recv_m = effect.unwrap_message();
             assert_eq!(recv_m.m, 2);
-            (recv_m.execute(), ())
         })
         .await;
 
     parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(|mut effect| {
             let recv_m = effect.unwrap_message();
             assert_eq!(recv_m.m, 2);
-            (recv_m.execute(), ())
         })
         .await;
 
