@@ -1,5 +1,4 @@
 use actum::prelude::*;
-use futures::StreamExt;
 use tracing::Instrument;
 
 async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
@@ -54,40 +53,44 @@ async fn test() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let (mut parent, mut parent_testkit) = testkit(generic_parent);
+    let (mut parent, parent_testkit) = testkit(generic_parent);
     let span = tracing::trace_span!("parent");
     let handle = tokio::spawn(parent.task.run_task().instrument(span));
 
     parent.m_ref.try_send(1).unwrap();
 
-    parent_testkit
-        .test_next_effect(|mut effect| {
+    let (parent_testkit, _) = parent_testkit
+        .test_next_effect(|effect| {
             let recv = effect.unwrap_message();
-            assert_eq!(recv.m, 1);
+            assert_eq!(*recv.m, 1);
         })
-        .await;
+        .await
+        .unwrap();
 
-    let mut child_testkit = parent_testkit
-        .test_next_effect(|mut effect| {
+    let (parent_testkit, child_testkit) = parent_testkit
+        .test_next_effect(|effect| {
             let mut spawn = effect.unwrap_spawn();
             let testkit = spawn.unwrap_testkit().downcast_unwrap::<u64>();
             testkit
         })
-        .await;
+        .await
+        .unwrap();
 
-    child_testkit
-        .test_next_effect(|mut effect| {
+    let (_child_testkit, _) = child_testkit
+        .test_next_effect(|effect| {
             let recv_m = effect.unwrap_message();
-            assert_eq!(recv_m.m, 2);
+            assert_eq!(*recv_m.m, 2);
         })
-        .await;
-
-    parent_testkit
-        .test_next_effect(|mut effect| {
+        .await
+        .unwrap();
+    //
+    let (_parent_testkit, _) = parent_testkit
+        .test_next_effect(|effect| {
             let recv_m = effect.unwrap_message();
-            assert_eq!(recv_m.m, 2);
+            assert_eq!(*recv_m.m, 2);
         })
-        .await;
+        .await
+        .unwrap();
 
     handle.await.unwrap();
 }

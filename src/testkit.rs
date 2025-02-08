@@ -6,9 +6,7 @@ use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 
 use crate::actor_bounds::Recv;
-use crate::effect::{
-    EffectType, RecvMessageEffect, RecvNoMoreSendersEffect, RecvStoppedEffect, ReturnedEffect, SpawnEffect,
-};
+use crate::effect::{EffectType, RecvMessageEffect, RecvStoppedEffect, SpawnEffect};
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
 use futures::{future, StreamExt};
@@ -22,7 +20,6 @@ use std::future::Future;
 /// Test whether the actor called [recv](crate::actor_bounds::ActorBounds::recv).
 ///
 /// ```
-/// use futures::StreamExt;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
@@ -39,18 +36,26 @@ use std::future::Future;
 ///
 /// #[tokio::test]
 /// async fn test() {
-///     let (mut root, mut testkit) = testkit(root);
+///     let (mut root, testkit) = testkit(root);
 ///     let handle = tokio::spawn(root.task.run_task());
 ///
 ///     root.m_ref.try_send(42).unwrap();
 ///
-///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert!(effect.as_ref().is_message_and(|m | *m == 42));
-///     drop(effect);
+///     let (testkit, effect) = testkit
+///         .test_next_effect(|effect| {
+///             let m = effect.unwrap_message().m;
+///             assert_eq!(*m, 42);
+///         })
+///         .await
+///         .unwrap();
 ///
-///     let effect = testkit.next().await.unwrap().recv().unwrap();
-///     assert!(effect.as_ref().is_message_and(|m | *m == 84));
-///     drop(effect);
+///     let (_testkit, _) = testkit
+///         .test_next_effect(|effect| {
+///             let m = effect.unwrap_message();
+///             assert_eq!(*m, 84);
+///         })
+///         .await
+///         .unwrap();
 ///
 ///     handle.await.unwrap();
 /// }
@@ -60,11 +65,10 @@ use std::future::Future;
 ///
 /// # Example
 /// ```
-/// use futures::StreamExt;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
+/// async fn parent<AB>(mut cell: AB, _me: ActorRef<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
@@ -74,7 +78,7 @@ use std::future::Future;
 ///     (cell, ())
 /// }
 ///
-/// async fn child<AB>(mut cell: AB, me: ActorRef<u32>) -> (AB, ())
+/// async fn child<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u32>,
 /// {
@@ -87,9 +91,9 @@ use std::future::Future;
 ///     let (parent, mut parent_testkit) = testkit(parent);
 ///     let handle = tokio::spawn(parent.task.run_task());
 ///
-///     let mut effect = parent_testkit.next().await.unwrap().spawn().unwrap();
-///     let mut child_testkit = effect.testkit().unwrap().downcast::<u32>().unwrap();
-///     drop(effect);
+///     let (_parent_testkit, _child_testkit) =
+///         parent_testkit.test_next_effect(|effect| effect.unwrap_spawn().testkit.unwrap().downcast_unwrap::<u32>());
+///
 ///     // Use the child testkit...
 ///
 ///     handle.await.unwrap();
@@ -124,74 +128,65 @@ impl<M> Testkit<M> {
     }
 
     /// Receive an effect from the actor and test it.
-    ///
-    /// To enforce that the received effect is executed without being dropped, it is made necessary to
-    /// call the [execute](super::effect::EffectExecution::execute) method of the effect and return the result from
-    /// the closure, as the result is not otherwise constructible by the user.
-    pub async fn test_next_effect<'a, 'm, T>(&'a mut self, handler: impl FnOnce(&EffectType<'m, M>) -> T) -> T
+    /// If the actor has returned, then there will be no more effects to test and None is returned.
+    /// Otherwise, the testkit is returned.
+    #[must_use]
+    pub async fn test_next_effect<T>(mut self, handler: impl FnOnce(EffectType<M>) -> T) -> Option<(Self, T)>
     where
-        'a: 'm,
         M: Send + 'static,
     {
         let select = future::select(self.recv_m_receiver.next(), self.testkit_receiver.next()).await;
-        let effect: EffectType<M> = match select {
-            Either::Left((inner, _)) => {
-                //
-                match inner {
-                    None => EffectType::Returned(ReturnedEffect),
-                    Some(Recv::Message(m)) => EffectType::Message(RecvMessageEffect::new(&mut self.recv_m_sender, m)),
-                    Some(Recv::Stopped(Some(m))) => {
-                        EffectType::Stopped(RecvStoppedEffect::new(&mut self.recv_m_sender, Some(m)))
-                    }
-                    Some(Recv::Stopped(None)) => {
-                        EffectType::Stopped(RecvStoppedEffect::new(&mut self.recv_m_sender, None))
-                    }
-                    Some(Recv::NoMoreSenders) => {
-                        EffectType::NoMoreSenders(RecvNoMoreSendersEffect::new(&mut self.recv_m_sender))
-                    }
-                }
-            }
-            Either::Right((inner, _)) => {
-                //
-                match inner {
-                    None => EffectType::Returned(ReturnedEffect),
-                    Some(None) => EffectType::Spawn(SpawnEffect::new(&mut self.testkit_sender, None)),
-                    Some(Some(testkit)) => EffectType::Spawn(SpawnEffect::new(&mut self.testkit_sender, Some(testkit))),
-                }
-            }
+
+        let mut recv_or_testkit = match select {
+            Either::Left((Some(recv), _)) => Either::Left(recv),
+            Either::Right((Some(testkit), _)) => Either::Right(testkit),
+            Either::Left((None, _)) | Either::Right((None, _)) => return None,
         };
 
-        let t = handler(&effect);
+        let effect = match &mut recv_or_testkit {
+            Either::Left(recv) => {
+                //
+                match recv {
+                    Recv::Message(m) => EffectType::Message(RecvMessageEffect::new(m)),
+                    Recv::Stopped(Some(m)) => EffectType::Stopped(RecvStoppedEffect::new(Some(m))),
+                    Recv::Stopped(None) => EffectType::Stopped(RecvStoppedEffect::new(None)),
+                    Recv::NoMoreSenders => EffectType::NoMoreSenders,
+                }
+            }
+            Either::Right(testkit) => EffectType::Spawn(SpawnEffect::new(testkit.take())),
+        };
 
-        match effect {
-            EffectType::Stopped(inner) => {
-                inner
-                    .recv_effect_out_m_sender
-                    .try_send(Recv::Stopped(inner.m))
-                    .expect("could not send effect back to actor");
+        let t = handler(effect);
+
+        match recv_or_testkit {
+            Either::Left(recv) => {
+                //
+                match recv {
+                    Recv::Message(m) => {
+                        self.recv_m_sender
+                            .try_send(Recv::Message(m))
+                            .expect("could not send effect back to actor");
+                    }
+                    Recv::Stopped(m) => {
+                        self.recv_m_sender
+                            .try_send(Recv::Stopped(m))
+                            .expect("could not send effect back to actor");
+                    }
+                    Recv::NoMoreSenders => {
+                        self.recv_m_sender
+                            .try_send(Recv::NoMoreSenders)
+                            .expect("could not send effect back to actor");
+                    }
+                }
             }
-            EffectType::Message(inner) => {
-                inner
-                    .recv_effect_out_m_sender
-                    .try_send(Recv::Message(inner.m))
-                    .expect("could not send effect back to actor");
-            }
-            EffectType::NoMoreSenders(inner) => {
-                inner
-                    .recv_effect_out_m_sender
-                    .try_send(Recv::NoMoreSenders)
-                    .expect("could not send effect back to actor");
-            }
-            EffectType::Spawn(inner) => {
-                inner
-                    .spawn_effect_out_sender
+            Either::Right(_) => {
+                self.testkit_sender
                     .try_send(())
                     .expect("could not send effect back to actor");
             }
-            EffectType::Returned(_) => {}
         }
 
-        t
+        Some((self, t))
     }
 }
 
