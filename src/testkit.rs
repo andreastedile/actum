@@ -138,9 +138,25 @@ impl<M> Testkit<M> {
         let select = future::select(self.recv_m_receiver.next(), self.testkit_receiver.next()).await;
 
         let mut recv_or_testkit = match select {
-            Either::Left((Some(recv), _)) => Either::Left(recv),
-            Either::Right((Some(testkit), _)) => Either::Right(testkit),
-            Either::Left((None, _)) | Either::Right((None, _)) => return None,
+            Either::Left((Some(recv), _)) => {
+                assert!(!self.recv_m_sender.is_closed());
+                Either::Left(recv)
+            }
+            Either::Right((Some(testkit), _)) => {
+                assert!(!self.testkit_sender.is_closed());
+                Either::Right(testkit)
+            }
+            Either::Left((None, _)) => {
+                // The actor returns -> TestBounds is dropped at the end of the ActorTask::run_task scope
+                // -> the channel is closed.
+                assert!(self.recv_m_sender.is_closed());
+                return None;
+            }
+            Either::Right((None, _)) => {
+                // Same reasoning.
+                assert!(self.testkit_sender.is_closed());
+                return None;
+            }
         };
 
         let effect = match &mut recv_or_testkit {

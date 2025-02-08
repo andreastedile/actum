@@ -57,6 +57,8 @@ where
         Ret: Send + 'static;
 
     async fn recv(&mut self) -> Recv<M> {
+        assert!(!self.bounds.recv_m_sender.is_closed());
+
         let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
         let recv = match select {
@@ -91,6 +93,8 @@ where
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
     {
+        assert!(!self.bounds.testkit_sender.is_closed());
+
         if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
             self.bounds
                 .testkit_sender
