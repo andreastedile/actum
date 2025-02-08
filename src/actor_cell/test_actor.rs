@@ -24,6 +24,7 @@ pub struct TestBounds<M> {
     testkit_sender: mpsc::Sender<Option<AnyTestkit>>,
     /// Used to receive a confirmation back from the [Testkit] to which the [Testkit] of the child actor was sent.
     testkit_receiver: mpsc::Receiver<()>,
+    awaiting_testkit: bool,
 }
 
 impl<M> TestBounds<M> {
@@ -38,6 +39,7 @@ impl<M> TestBounds<M> {
             recv_m_receiver,
             testkit_sender,
             testkit_receiver,
+            awaiting_testkit: false,
         }
     }
 }
@@ -59,23 +61,27 @@ where
     async fn recv(&mut self) -> Recv<M> {
         assert!(!self.bounds.recv_m_sender.is_closed());
 
-        let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
+        if !self.bounds.awaiting_testkit {
+            let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
-        let recv = match select {
-            Either::Left(_) /* (Result<Stop, Canceled>, Next<Receiver<M>>) */ => {
-                self.m_receiver.close();
-                let m = self.m_receiver.try_next().expect("the message receiver should stay open as long as the stop receiver");
-                Recv::Stopped(m)
-            }
-            Either::Right((Some(m), _)) => Recv::Message(m),
-            Either::Right((None, _)) => Recv::NoMoreSenders,
-        };
+            let recv = match select {
+                Either::Left(_) /* (Result<Stop, Canceled>, Next<Receiver<M>>) */ => {
+                    self.m_receiver.close();
+                    let m = self.m_receiver.try_next().expect("the message receiver should stay open as long as the stop receiver");
+                    Recv::Stopped(m)
+                }
+                Either::Right((Some(m), _)) => Recv::Message(m),
+                Either::Right((None, _)) => Recv::NoMoreSenders,
+            };
 
-        self.bounds
-            .recv_m_sender
-            .send(recv)
-            .await
-            .expect("could not send the Recv to the testkit");
+            self.bounds
+                .recv_m_sender
+                .try_send(recv)
+                .expect("could not send the Recv to the testkit");
+
+            // there is an await next
+            self.bounds.awaiting_testkit = true; // now the future is cancel safe
+        }
 
         let recv = self
             .bounds
@@ -83,6 +89,8 @@ where
             .next()
             .await
             .expect("could not receive the Recv back from the testkit");
+
+        self.bounds.awaiting_testkit = false;
 
         recv
     }
