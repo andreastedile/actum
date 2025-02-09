@@ -1,6 +1,7 @@
 use crate::actor::Actor;
 use crate::actor_cell::actor_task::RunTask;
 use crate::actor_ref::ActorRef;
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
 pub trait ActorBounds<M>: Send + 'static
@@ -53,12 +54,29 @@ pub enum Recv<M> {
     NoMoreSenders,
 }
 
+impl<M> Debug for Recv<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Message(_) => f.write_str("Message"),
+            Self::Stopped(_) => f.write_str("Stopped"),
+            Self::NoMoreSenders => f.write_str("NoMoreSenders"),
+        }
+    }
+}
+
 impl<M> Recv<M> {
     pub fn message(self) -> Option<M> {
         if let Self::Message(m) = self {
             Some(m)
         } else {
             None
+        }
+    }
+
+    pub fn unwrap_message(self) -> M {
+        match self {
+            Self::Message(m) => m,
+            other => panic!("called `Recv::unwrap_message()` on a `{:?}` value", other),
         }
     }
 
@@ -79,6 +97,13 @@ impl<M> Recv<M> {
             Some(m)
         } else {
             None
+        }
+    }
+
+    pub fn unwrap_stopped(self) -> Option<M> {
+        match self {
+            Self::Stopped(m) => m,
+            other => panic!("called `Recv::unwrap_stopped()` on a `{:?}` value", other),
         }
     }
 
