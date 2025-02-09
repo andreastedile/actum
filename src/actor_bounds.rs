@@ -1,6 +1,7 @@
 use crate::actor::Actor;
 use crate::actor_cell::actor_task::RunTask;
 use crate::actor_ref::ActorRef;
+use either::Either;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
@@ -34,7 +35,7 @@ where
     fn spawn<M2, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = Option<Actor<M2, Self::SpawnOut<M2, F, Fut, Ret>>>> + Send + '_
+    ) -> impl Future<Output = Either<Actor<M2, Self::SpawnOut<M2, F, Fut, Ret>>, Option<M>>> + Send + '_
     where
         M2: Send + 'static,
         F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,

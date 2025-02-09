@@ -5,15 +5,16 @@ use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 
-use crate::actor_bounds::Recv;
-use crate::effect::{EffectType, RecvMessageEffect, RecvStoppedEffect, SpawnEffect};
+use crate::effect::{
+    Effect, EffectFromActorToTestkit, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
+    SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
+};
 use futures::channel::{mpsc, oneshot};
-use futures::future::Either;
 use futures::{future, StreamExt};
 use std::any::Any;
 use std::future::Future;
 
-/// Receive and test actor [effects](EffectType).
+/// Receive and test actor [effects](EffectFromActorToTestkit).
 ///
 /// # Examples
 ///
@@ -100,30 +101,24 @@ use std::future::Future;
 /// }
 /// ```
 pub struct Testkit<M> {
-    /// Used to send a [Recv] from the actor.
-    /// See [ActorBounds::recv].
-    recv_m_receiver: mpsc::Receiver<Recv<M>>,
-    /// Used to send the [Recv] back to the actor from which it was received.
-    recv_m_sender: mpsc::Sender<Recv<M>>,
-    /// Used to receive the optional [Testkit] of a child actor from the actor.
-    /// See [ActorBounds::spawn].
-    testkit_receiver: mpsc::Receiver<Option<AnyTestkit>>,
-    /// Used to receive a confirmation back to the actor from which the [Testkit] of the child actor was received.
-    testkit_sender: mpsc::Sender<()>,
+    recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
+    recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
+    spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit<M>>,
+    spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor<M>>,
 }
 
 impl<M> Testkit<M> {
     pub fn new(
-        recv_m_receiver: mpsc::Receiver<Recv<M>>,
-        recv_m_sender: mpsc::Sender<Recv<M>>,
-        testkit_receiver: mpsc::Receiver<Option<AnyTestkit>>,
-        testkit_sender: mpsc::Sender<()>,
+        recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
+        recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
+        spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit<M>>,
+        spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor<M>>,
     ) -> Self {
         Self {
-            recv_m_receiver,
-            recv_m_sender,
-            testkit_receiver,
-            testkit_sender,
+            recv_effect_receiver,
+            recv_effect_sender,
+            spawn_effect_receiver,
+            spawn_effect_sender,
         }
     }
 
@@ -131,76 +126,64 @@ impl<M> Testkit<M> {
     /// If the actor has returned, then there will be no more effects to test and None is returned.
     /// Otherwise, the testkit is returned.
     #[must_use]
-    pub async fn test_next_effect<T>(mut self, handler: impl FnOnce(EffectType<M>) -> T) -> Option<(Self, T)>
+    pub async fn test_next_effect<T>(mut self, handler: impl FnOnce(Effect<M>) -> T) -> Option<(Self, T)>
     where
         M: Send + 'static,
     {
-        let select = future::select(self.recv_m_receiver.next(), self.testkit_receiver.next()).await;
+        let select = future::select(self.recv_effect_receiver.next(), self.spawn_effect_receiver.next()).await;
 
-        let mut recv_or_testkit = match select {
-            Either::Left((Some(recv), _)) => {
-                assert!(!self.recv_m_sender.is_closed());
-                Either::Left(recv)
-            }
-            Either::Right((Some(testkit), _)) => {
-                assert!(!self.testkit_sender.is_closed());
-                Either::Right(testkit)
-            }
-            Either::Left((None, _)) => {
+        let mut effect_from_actor: EffectFromActorToTestkit<M> = match select {
+            future::Either::Left((Some(inner), _)) => EffectFromActorToTestkit::Recv(inner),
+            future::Either::Right((Some(inner), _)) => EffectFromActorToTestkit::Spawn(inner),
+            future::Either::Left((None, _)) => {
                 // The actor returns -> TestBounds is dropped at the end of the ActorTask::run_task scope
                 // -> the channel is closed.
-                assert!(self.recv_m_sender.is_closed());
+                assert!(self.recv_effect_sender.is_closed());
                 return None;
             }
-            Either::Right((None, _)) => {
+            future::Either::Right((None, _)) => {
                 // Same reasoning.
-                assert!(self.testkit_sender.is_closed());
+                assert!(self.spawn_effect_sender.is_closed());
                 return None;
             }
         };
 
-        let effect = match &mut recv_or_testkit {
-            Either::Left(recv) => {
+        let effect = match &mut effect_from_actor {
+            EffectFromActorToTestkit::Recv(inner) => Effect::Recv(inner.0.as_ref()),
+            EffectFromActorToTestkit::Spawn(inner) => {
                 //
-                match recv {
-                    Recv::Message(m) => EffectType::Message(RecvMessageEffect::new(m)),
-                    Recv::Stopped(Some(m)) => EffectType::Stopped(RecvStoppedEffect::new(Some(m))),
-                    Recv::Stopped(None) => EffectType::Stopped(RecvStoppedEffect::new(None)),
-                    Recv::NoMoreSenders => EffectType::NoMoreSenders,
+                match &mut inner.0 {
+                    either::Either::Left(testkit) => Effect::Spawn(either::Either::Left(testkit.take().unwrap())),
+                    either::Either::Right(recv) => Effect::Spawn(either::Either::Right(recv.as_ref())),
                 }
             }
-            Either::Right(testkit) => EffectType::Spawn(SpawnEffect::new(testkit.take())),
         };
 
         let t = handler(effect);
 
-        match recv_or_testkit {
-            Either::Left(recv) => {
-                //
-                match recv {
-                    Recv::Message(m) => {
-                        self.recv_m_sender
-                            .try_send(Recv::Message(m))
-                            .expect("could not send effect back to actor");
-                    }
-                    Recv::Stopped(m) => {
-                        self.recv_m_sender
-                            .try_send(Recv::Stopped(m))
-                            .expect("could not send effect back to actor");
-                    }
-                    Recv::NoMoreSenders => {
-                        self.recv_m_sender
-                            .try_send(Recv::NoMoreSenders)
-                            .expect("could not send effect back to actor");
-                    }
-                }
-            }
-            Either::Right(_) => {
-                self.testkit_sender
-                    .try_send(())
+        match effect_from_actor {
+            EffectFromActorToTestkit::Recv(inner) => {
+                let effect_to_actor = RecvEffectFromTestkitToActor(inner.0);
+                self.recv_effect_sender
+                    .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-        }
+            EffectFromActorToTestkit::Spawn(inner) => match inner.0 {
+                either::Either::Left(testkit) => {
+                    assert!(testkit.is_none(), "testkit is previously unwrapped");
+                    let effect_to_actor = SpawnEffectFromTestkitToActor(either::Either::Left(()));
+                    self.spawn_effect_sender
+                        .try_send(effect_to_actor)
+                        .expect("could not send effect back to actor");
+                }
+                either::Either::Right(recv) => {
+                    let effect_to_actor = SpawnEffectFromTestkitToActor(either::Either::Right(recv));
+                    self.spawn_effect_sender
+                        .try_send(effect_to_actor)
+                        .expect("could not send effect back to actor");
+                }
+            },
+        };
 
         Some((self, t))
     }
@@ -251,25 +234,25 @@ where
     let m_channel = mpsc::channel::<M>(100);
 
     let guard = ActorDropGuard::new(stop_channel.0);
-    let recv_m_channel_out = mpsc::channel::<Recv<M>>(1);
-    let recv_m_channel_in = mpsc::channel::<Recv<M>>(1);
-    let testkit_channel_out = mpsc::channel::<Option<AnyTestkit>>(1);
-    let testkit_channel_in = mpsc::channel::<()>(1);
+    let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
+    let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
+    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit<M>>(1);
+    let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor<M>>(1);
     let bounds = TestBounds::new(
-        recv_m_channel_out.0,
-        recv_m_channel_in.1,
-        testkit_channel_out.0,
-        testkit_channel_in.1,
+        recv_effect_actor_to_testkit_channel.0,
+        recv_effect_testkit_to_actor_channel.1,
+        spawn_effect_actor_to_testkit_channel.0,
+        spawn_effect_testkit_to_actor_channel.1,
     );
     let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
 
     let m_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, m_ref.clone(), None);
     let testkit = Testkit::new(
-        recv_m_channel_out.1,
-        recv_m_channel_in.0,
-        testkit_channel_out.1,
-        testkit_channel_in.0,
+        recv_effect_actor_to_testkit_channel.1,
+        recv_effect_testkit_to_actor_channel.0,
+        spawn_effect_actor_to_testkit_channel.1,
+        spawn_effect_testkit_to_actor_channel.0,
     );
 
     (Actor::new(task, guard, m_ref), testkit)

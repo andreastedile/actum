@@ -1,45 +1,39 @@
+use crate::prelude::Recv;
 use crate::testkit::AnyTestkit;
-use std::fmt::{Debug, Formatter};
+use either::Either;
+use std::fmt::{Debug, Formatter, Pointer};
 
-/// TODO
-pub enum EffectType<'a, M> {
-    Stopped(RecvStoppedEffect<'a, M>),
-    Message(RecvMessageEffect<'a, M>),
-    NoMoreSenders,
-    Spawn(SpawnEffect),
+pub enum Effect<'m, M> {
+    Recv(Recv<&'m M>),
+    Spawn(Either<AnyTestkit, Option<&'m M>>),
 }
 
-impl<'a, M> Debug for EffectType<'a, M> {
+impl<M> Debug for Effect<'_, M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            EffectType::Stopped(_) => f.write_str("Stopped"),
-            EffectType::Message(_) => f.write_str("Message"),
-            EffectType::NoMoreSenders => f.write_str("NoMoreSenders"),
-            EffectType::Spawn(_) => f.write_str("Spawn"),
+            Effect::Recv(inner) => inner.fmt(f),
+            Effect::Spawn(inner) => inner.fmt(f),
         }
     }
 }
 
-impl<'a, M> EffectType<'a, M> {
-    pub fn unwrap_message(self) -> RecvMessageEffect<'a, M> {
+impl<'m, M> Effect<'m, M> {
+    pub fn unwrap_recv(self) -> Recv<&'m M> {
         match self {
-            EffectType::Message(inner) => inner,
-            other => panic!("called `EffectType::unwrap_message()` on a `{:?}` value", other),
+            Effect::Recv(inner) => inner,
+            other => panic!("called `Effect::unwrap_recv()` on a `{:?}` value", other),
         }
     }
 
-    pub fn unwrap_stopped(self) -> RecvStoppedEffect<'a, M> {
+    pub fn unwrap_spawn(self) -> Either<AnyTestkit, Option<&'m M>> {
         match self {
-            EffectType::Stopped(inner) => inner,
-            other => panic!("called `EffectType::unwrap_stopped()` on a `{:?}` value", other),
-        }
-    }
-
-    pub fn unwrap_spawn(self) -> SpawnEffect {
-        match self {
-            EffectType::Spawn(inner) => inner,
+            Effect::Spawn(inner) => inner,
             other => panic!("called `Effect::unwrap_spawn()` on a `{:?}` value", other),
         }
+    }
+
+    pub const fn is_recv(&self) -> bool {
+        matches!(self, Self::Recv(_))
     }
 
     pub const fn is_spawn(&self) -> bool {
@@ -47,38 +41,54 @@ impl<'a, M> EffectType<'a, M> {
     }
 }
 
-pub struct RecvMessageEffect<'a, M> {
-    pub m: &'a M,
+pub enum EffectFromActorToTestkit<M> {
+    Recv(RecvEffectFromActorToTestkit<M>),
+    Spawn(SpawnEffectFromActorToTestkit<M>),
 }
 
-pub struct RecvStoppedEffect<'a, M> {
-    pub m: Option<&'a M>,
-}
-
-pub struct SpawnEffect {
-    pub testkit: Option<AnyTestkit>,
-}
-
-pub struct ReturnedEffect;
-
-impl<'a, M> RecvMessageEffect<'a, M> {
-    pub fn new(m: &'a M) -> Self {
-        Self { m }
+impl<M> Debug for EffectFromActorToTestkit<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Recv(inner) => inner.fmt(f),
+            Self::Spawn(inner) => inner.fmt(f),
+        }
     }
 }
 
-impl<'a, M> RecvStoppedEffect<'a, M> {
-    pub fn new(m: Option<&'a M>) -> Self {
-        Self { m }
+pub struct RecvEffectFromActorToTestkit<M>(pub Recv<M>);
+
+impl<M> Debug for RecvEffectFromActorToTestkit<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
-impl SpawnEffect {
-    pub fn new(testkit: Option<AnyTestkit>) -> Self {
-        Self { testkit }
-    }
+pub struct SpawnEffectFromActorToTestkit<M>(pub Either<Option<AnyTestkit>, Option<M>>);
 
-    pub fn unwrap_testkit(&mut self) -> AnyTestkit {
-        self.testkit.take().unwrap()
+impl<M> Debug for SpawnEffectFromActorToTestkit<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Either::Left(_) => f.write_str("AnyTestkit"),
+            Either::Right(_) => f.write_str("Message"),
+        }
+    }
+}
+
+pub struct RecvEffectFromTestkitToActor<M>(pub Recv<M>);
+
+impl<M> Debug for RecvEffectFromTestkitToActor<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+pub struct SpawnEffectFromTestkitToActor<M>(pub Either<(), Option<M>>);
+
+impl<M> Debug for SpawnEffectFromTestkitToActor<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Either::Left(_) => f.write_str(""),
+            Either::Right(_) => f.write_str("Message"),
+        }
     }
 }

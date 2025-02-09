@@ -6,9 +6,8 @@ use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 use crate::resolve_when_one::ResolveWhenOne;
+use either::Either;
 use futures::channel::{mpsc, oneshot};
-use futures::future::FusedFuture;
-use futures::stream::FusedStream;
 use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
 use std::task::Poll;
@@ -52,7 +51,10 @@ where
         })
     }
 
-    async fn spawn<M2, F, Fut, Ret>(&mut self, f: F) -> Option<Actor<M2, ActorTask<M2, F, Fut, Ret, StandardBounds>>>
+    async fn spawn<M2, F, Fut, Ret>(
+        &mut self,
+        f: F,
+    ) -> Either<Actor<M2, ActorTask<M2, F, Fut, Ret, StandardBounds>>, Option<M>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -69,7 +71,8 @@ where
         };
 
         if stopped {
-            return None;
+            let m = self.m_receiver.try_next().expect("message channel was closed");
+            return Either::Right(m);
         }
 
         let stop_channel = oneshot::channel::<Stop>();
@@ -83,6 +86,6 @@ where
         let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
         let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
 
-        Some(Actor::new(task, guard, m2_ref))
+        Either::Left(Actor::new(task, guard, m2_ref))
     }
 }

@@ -12,7 +12,7 @@ where
     let child = cell
         .spawn(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
         .await
-        .unwrap();
+        .unwrap_left();
     let span = tracing::info_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
@@ -61,16 +61,17 @@ async fn test() {
 
     let (parent_testkit, _) = parent_testkit
         .test_next_effect(|effect| {
-            let recv = effect.unwrap_message();
-            assert_eq!(*recv.m, 1);
+            let recv = effect.unwrap_recv();
+            let m = recv.unwrap_message();
+            assert_eq!(*m, 1);
         })
         .await
         .unwrap();
 
     let (parent_testkit, child_testkit) = parent_testkit
         .test_next_effect(|effect| {
-            let mut spawn = effect.unwrap_spawn();
-            let testkit = spawn.unwrap_testkit().downcast_unwrap::<u64>();
+            let spawn = effect.unwrap_spawn();
+            let testkit = spawn.unwrap_left().downcast_unwrap::<u64>();
             testkit
         })
         .await
@@ -78,16 +79,18 @@ async fn test() {
 
     let (_child_testkit, _) = child_testkit
         .test_next_effect(|effect| {
-            let recv_m = effect.unwrap_message();
-            assert_eq!(*recv_m.m, 2);
+            let recv = effect.unwrap_recv();
+            let m = recv.unwrap_message();
+            assert_eq!(*m, 2);
         })
         .await
         .unwrap();
     //
     let (_parent_testkit, _) = parent_testkit
         .test_next_effect(|effect| {
-            let recv_m = effect.unwrap_message();
-            assert_eq!(*recv_m.m, 2);
+            let recv = effect.unwrap_recv();
+            let m = recv.unwrap_message();
+            assert_eq!(*m, 2);
         })
         .await
         .unwrap();
