@@ -57,6 +57,7 @@ where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (ActorCell<M2, StandardBounds>, Ret)> + Send + 'static,
+        Ret: Send + 'static,
     {
         let stopped = match self.stop_receiver.try_recv() {
             Ok(None) => false,

@@ -109,6 +109,7 @@ where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
+        Ret: Send + 'static,
     {
         assert!(!self.bounds.testkit_sender.is_closed());
 
