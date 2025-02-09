@@ -38,7 +38,7 @@ where
     Ret: Send + 'static,
     CABT: Send + 'static,
 {
-    async fn run_task(mut self) -> Ret {
+    async fn run_task(self) -> Ret {
         let f = self.f;
         let fut = f(self.cell, self.m_ref);
         let (mut cell, ret) = fut.await;
