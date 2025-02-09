@@ -24,7 +24,7 @@ use std::future::Future;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>)
+/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
@@ -33,10 +33,12 @@ use std::future::Future;
 ///
 ///     let m2 = cell.recv().await.message().unwrap();
 ///     debug_assert_eq!(m2, m1 * 2);
+///     
+///     (cell, ())
 /// }
 ///
-/// #[tokio::test]
-/// async fn test() {
+/// #[tokio::main]
+/// async fn main() {
 ///     let (mut root, testkit) = testkit(root);
 ///     let handle = tokio::spawn(root.task.run_task());
 ///
@@ -44,7 +46,7 @@ use std::future::Future;
 ///
 ///     let (testkit, effect) = testkit
 ///         .test_next_effect(|effect| {
-///             let m = effect.unwrap_message().m;
+///             let m = effect.unwrap_recv().unwrap_message();
 ///             assert_eq!(*m, 42);
 ///         })
 ///         .await
@@ -52,7 +54,7 @@ use std::future::Future;
 ///
 ///     let (_testkit, _) = testkit
 ///         .test_next_effect(|effect| {
-///             let m = effect.unwrap_message();
+///             let m = effect.unwrap_recv().unwrap_message();
 ///             assert_eq!(*m, 84);
 ///         })
 ///         .await
@@ -73,7 +75,7 @@ use std::future::Future;
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     let child = cell.spawn(child).await.unwrap();
+///     let child = cell.spawn(child).await.unwrap_left();
 ///     let handle = tokio::spawn(child.task.run_task());
 ///     handle.await.unwrap();
 ///     (cell, ())
@@ -93,7 +95,7 @@ use std::future::Future;
 ///     let handle = tokio::spawn(parent.task.run_task());
 ///
 ///     let (_parent_testkit, _child_testkit) =
-///         parent_testkit.test_next_effect(|effect| effect.unwrap_spawn().testkit.unwrap().downcast_unwrap::<u32>());
+///         parent_testkit.test_next_effect(|effect| effect.unwrap_spawn().unwrap_left().downcast_unwrap::<u32>());
 ///
 ///     // Use the child testkit...
 ///

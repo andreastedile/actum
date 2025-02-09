@@ -30,7 +30,7 @@ async fn main() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let mut root = actum(an_actor);
+    let root = actum(an_actor);
     let span = tracing::info_span!("root");
     let handle = tokio::spawn(root.task.run_task().instrument(span));
 
