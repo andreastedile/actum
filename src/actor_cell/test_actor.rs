@@ -149,8 +149,7 @@ where
 
         self.bounds
             .testkit_sender
-            .send(Some(AnyTestkit::from(testkit)))
-            .await
+            .try_send(Some(AnyTestkit::from(testkit)))
             .expect("could not send the child actor testkit to the testkit");
 
         self.bounds
