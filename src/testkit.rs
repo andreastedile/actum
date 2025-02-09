@@ -110,7 +110,7 @@ pub struct Testkit<M> {
 }
 
 impl<M> Testkit<M> {
-    pub fn new(
+    pub const fn new(
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
         spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit<M>>,
@@ -218,10 +218,8 @@ impl AnyTestkit {
     }
 
     pub fn downcast_unwrap<M: 'static>(&mut self) -> Testkit<M> {
-        self.downcast().expect(&format!(
-            "testkit is not downcastable to {}",
-            std::any::type_name::<M>()
-        ))
+        self.downcast()
+            .unwrap_or_else(|| panic!("testkit is not downcastable to {}", std::any::type_name::<M>()))
     }
 }
 

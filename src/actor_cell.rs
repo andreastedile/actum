@@ -13,7 +13,7 @@ pub struct ActorCell<M, AB> {
 }
 
 impl<M, AB> ActorCell<M, AB> {
-    pub(crate) fn new(stop_receiver: oneshot::Receiver<Stop>, m_receiver: mpsc::Receiver<M>, bounds: AB) -> Self {
+    pub(crate) const fn new(stop_receiver: oneshot::Receiver<Stop>, m_receiver: mpsc::Receiver<M>, bounds: AB) -> Self {
         Self {
             stop_receiver,
             m_receiver,
