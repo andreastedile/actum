@@ -84,6 +84,7 @@ impl<M> Recv<M> {
         matches!(self, Self::Message(_))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_message_and(self, f: impl FnOnce(M) -> bool) -> bool {
         if let Self::Message(m) = self {
             f(m)
@@ -107,6 +108,7 @@ impl<M> Recv<M> {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_stopped_and(self, f: impl FnOnce(Option<M>) -> bool) -> bool {
         if let Self::Stopped(m) = self {
             f(m)
