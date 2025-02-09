@@ -8,8 +8,7 @@ use crate::drop_guard::ActorDropGuard;
 use crate::resolve_when_one::ResolveWhenOne;
 use crate::testkit::{AnyTestkit, Testkit};
 use futures::channel::{mpsc, oneshot};
-use futures::future::{Either, FusedFuture};
-use futures::stream::FusedStream;
+use futures::future::Either;
 use futures::{future, SinkExt, StreamExt};
 use std::future::Future;
 
@@ -65,9 +64,19 @@ where
             let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
             let recv = match select {
-                Either::Left(_) /* (Result<Stop, Canceled>, Next<Receiver<M>>) */ => {
+                Either::Left(Ok(Stop)) => {
                     self.m_receiver.close();
-                    let m = self.m_receiver.try_next().expect("the message receiver should stay open as long as the stop receiver");
+                    let m = self
+                        .m_receiver
+                        .try_next()
+                        .expect("the message receiver should stay open as long as the stop receiver");
+                    Recv::Stopped(m)
+                }
+                Either::Left(Err(oneshot::Canceled)) => {
+                    let m = self
+                        .m_receiver
+                        .try_next()
+                        .expect("the message receiver should stay open as long as the stop receiver");
                     Recv::Stopped(m)
                 }
                 Either::Right((Some(m), _)) => Recv::Message(m),
@@ -103,7 +112,16 @@ where
     {
         assert!(!self.bounds.testkit_sender.is_closed());
 
-        if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
+        let stopped = match self.stop_receiver.try_recv() {
+            Ok(None) => false,
+            Ok(Some(Stop)) => {
+                self.m_receiver.close();
+                true
+            }
+            Err(oneshot::Canceled) => true,
+        };
+
+        if stopped {
             self.bounds
                 .testkit_sender
                 .send(None)

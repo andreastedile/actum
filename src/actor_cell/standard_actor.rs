@@ -58,7 +58,16 @@ where
         F: FnOnce(ActorCell<M2, StandardBounds>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (ActorCell<M2, StandardBounds>, Ret)> + Send + 'static,
     {
-        if self.stop_receiver.is_terminated() || self.m_receiver.is_terminated() {
+        let stopped = match self.stop_receiver.try_recv() {
+            Ok(None) => false,
+            Ok(Some(Stop)) => {
+                self.m_receiver.close();
+                true
+            }
+            Err(oneshot::Canceled) => true,
+        };
+
+        if stopped {
             return None;
         }
 
