@@ -12,15 +12,16 @@ use crate::effect::{
 use crate::resolve_when_one::ResolveWhenOne;
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
-use futures::{future, StreamExt};
-use std::future::Future;
+use futures::{future, FutureExt, StreamExt};
+use std::future::{poll_fn, Future};
+use std::task::{ready, Poll};
 
 pub struct TestBounds<M> {
     recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit<M>>,
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor<M>>,
-    awaiting_testkit: bool,
+    state: RecvFutureStateMachine,
 }
 
 impl<M> TestBounds<M> {
@@ -35,9 +36,16 @@ impl<M> TestBounds<M> {
             recv_effect_receiver,
             spawn_effect_sender,
             spawn_effect_receiver,
-            awaiting_testkit: false,
+            state: RecvFutureStateMachine::S0,
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RecvFutureStateMachine {
+    S0,
+    S1,
+    S2,
 }
 
 impl<M> ActorBounds<M> for ActorCell<M, TestBounds<M>>
@@ -54,51 +62,73 @@ where
         Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
-    async fn recv(&mut self) -> Recv<M> {
-        assert!(!self.bounds.recv_effect_sender.is_closed());
-
-        loop {
-            if !self.bounds.awaiting_testkit {
-                let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
-
-                let recv = match select {
-                    future::Either::Left((Ok(Stop), _)) => {
-                        self.m_receiver.close();
-                        let m = self.m_receiver.try_next().expect("message channel was closed");
-                        Recv::Stopped(m)
-                    }
-                    future::Either::Left((Err(oneshot::Canceled), _)) => {
-                        let m = self.m_receiver.try_next().expect("message channel was closed");
-                        Recv::Stopped(m)
-                    }
-                    future::Either::Right((Some(m), _)) => Recv::Message(m),
-                    future::Either::Right((None, _)) => Recv::NoMoreSenders,
-                };
-
-                let recv_effect_to_testkit = RecvEffectFromActorToTestkit(recv);
-
-                self.bounds
-                    .recv_effect_sender
-                    .try_send(recv_effect_to_testkit)
-                    .expect("could not send the effect to the testkit");
-
-                // there is an await next
-                self.bounds.awaiting_testkit = true; // now the future is cancel safe
-            }
-
-            let recv_effect_from_testkit = self
-                .bounds
-                .recv_effect_receiver
-                .next()
-                .await
-                .expect("could not receive the effect back from the testkit");
-
-            self.bounds.awaiting_testkit = false;
-
-            if !recv_effect_from_testkit.discarded {
-                break recv_effect_from_testkit.recv;
-            }
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
+        if self.bounds.state == RecvFutureStateMachine::S1 {
+            // If the state is S1, it means that the previous future was dropped while it was waiting for the effect to
+            // come back from the testkit.
+            self.bounds.state = RecvFutureStateMachine::S2;
         }
+
+        poll_fn(|cx| {
+            if self.bounds.recv_effect_sender.is_closed() {
+                panic!("the testkit has dropped");
+            }
+
+            loop {
+                match self.bounds.state {
+                    RecvFutureStateMachine::S0 => {
+                        let select =
+                            ready!(future::select(&mut self.stop_receiver, self.m_receiver.next()).poll_unpin(cx));
+
+                        let recv = match select {
+                            future::Either::Left((Ok(Stop), _)) => {
+                                self.m_receiver.close();
+                                let m = self.m_receiver.try_next().expect("message channel was closed");
+                                Recv::Stopped(m)
+                            }
+                            future::Either::Left((Err(oneshot::Canceled), _)) => {
+                                let m = self.m_receiver.try_next().expect("message channel was closed");
+                                Recv::Stopped(m)
+                            }
+                            future::Either::Right((Some(m), _)) => Recv::Message(m),
+                            future::Either::Right((None, _)) => Recv::NoMoreSenders,
+                        };
+
+                        let effect_out = RecvEffectFromActorToTestkit(recv);
+
+                        self.bounds
+                            .recv_effect_sender
+                            .try_send(effect_out)
+                            .expect("could not send the effect to the testkit");
+
+                        self.bounds.state = RecvFutureStateMachine::S1;
+                    }
+                    RecvFutureStateMachine::S1 => {
+                        let effect_in = ready!(self.bounds.recv_effect_receiver.poll_next_unpin(cx))
+                            .expect("could not receive effect back from the testkit");
+
+                        self.bounds.state = RecvFutureStateMachine::S0;
+
+                        if !effect_in.discarded {
+                            return Poll::Ready(effect_in.recv);
+                        } // else: poll the channels in the next iteration
+                    }
+                    RecvFutureStateMachine::S2 => {
+                        let effect_in = ready!(self.bounds.recv_effect_receiver.poll_next_unpin(cx))
+                            .expect("could not receive the effect back from the testkit");
+
+                        let effect_out = RecvEffectFromActorToTestkit(effect_in.recv);
+
+                        self.bounds
+                            .recv_effect_sender
+                            .try_send(effect_out)
+                            .expect("could not send the effect to the testkit");
+
+                        self.bounds.state = RecvFutureStateMachine::S1;
+                    }
+                }
+            }
+        })
     }
 
     async fn spawn<M2, F, Fut, Ret>(

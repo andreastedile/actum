@@ -1,0 +1,15 @@
+digraph StateMachine {
+    rankdir=LR;
+    node [shape=box];
+
+    S0 [label="S0: waiting for testkit = false"];
+    S1 [label="S1: waiting for testkit = true"];
+    S2 [label="S2: waiting for testkit = true"];
+
+    S0 -> S0 [label="drop or create /"];
+    S0 -> S1 [label="message or stopped / effect out"];
+    S1 -> S2 [label="drop or create /"];
+    S1 -> S0 [label="effect in / resolve Recv "];
+    S2 -> S2 [label="drop or create /"];
+    S2 -> S1 [label="effect in / effect out"];
+}
