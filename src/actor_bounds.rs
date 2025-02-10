@@ -23,15 +23,9 @@ where
         Ret: Send + 'static;
 
     /// Asynchronously receive the next message.
-    ///
-    /// This method returns `None` when the actor has been stopped by its parent or when all its [ActorRef]s have been dropped.
-    /// After that this method has returned `None`, subsequent calls to the method will continue to do so.
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
 
-    /// Define a child actor.
-    ///
-    /// This method returns `None` when the actor has been stopped by its parent or when all its [ActorRef]s have been dropped.
-    /// After that this method has returned `None`, subsequent calls to the method will continue to do so.
+    /// Arrange a child actor.
     fn spawn<M2, F, Fut, Ret>(
         &mut self,
         f: F,
