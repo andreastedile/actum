@@ -6,8 +6,8 @@ use crate::actor_ref::ActorRef;
 use crate::drop_guard::ActorDropGuard;
 
 use crate::effect::{
-    Effect, EffectFromActorToTestkit, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
-    SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
+    Effect, EffectFromActorToTestkit, RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
+    SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
 };
 use futures::channel::{mpsc, oneshot};
 use futures::{future, StreamExt};
@@ -33,7 +33,7 @@ use std::future::Future;
 ///
 ///     let m2 = cell.recv().await.message().unwrap();
 ///     debug_assert_eq!(m2, m1 * 2);
-///     
+///
 ///     (cell, ())
 /// }
 ///
@@ -46,7 +46,7 @@ use std::future::Future;
 ///
 ///     let (testkit, effect) = testkit
 ///         .test_next_effect(|effect| {
-///             let m = effect.unwrap_recv().unwrap_message();
+///             let m = effect.unwrap_recv().recv.unwrap_message();
 ///             assert_eq!(*m, 42);
 ///         })
 ///         .await
@@ -54,7 +54,7 @@ use std::future::Future;
 ///
 ///     let (_testkit, _) = testkit
 ///         .test_next_effect(|effect| {
-///             let m = effect.unwrap_recv().unwrap_message();
+///             let m = effect.unwrap_recv().recv.unwrap_message();
 ///             assert_eq!(*m, 84);
 ///         })
 ///         .await
@@ -94,8 +94,9 @@ use std::future::Future;
 ///     let (parent, mut parent_testkit) = testkit(parent);
 ///     let handle = tokio::spawn(parent.task.run_task());
 ///
-///     let (_parent_testkit, _child_testkit) =
-///         parent_testkit.test_next_effect(|effect| effect.unwrap_spawn().unwrap_left().downcast_unwrap::<u32>());
+///     let (_parent_testkit, _child_testkit) = parent_testkit.test_next_effect(|effect| {
+///         effect.unwrap_spawn().testkit_or_message.downcast_unwrap::<u32>()
+///     });
 ///
 ///     // Use the child testkit...
 ///
@@ -150,13 +151,30 @@ impl<M> Testkit<M> {
             }
         };
 
+        let mut discarded = false;
         let effect = match &mut effect_from_actor {
-            EffectFromActorToTestkit::Recv(inner) => Effect::Recv(inner.0.as_ref()),
+            EffectFromActorToTestkit::Recv(inner) => {
+                let effect = RecvEffect {
+                    recv: inner.0.as_ref(),
+                    discarded: &mut discarded,
+                };
+                Effect::Recv(effect)
+            }
             EffectFromActorToTestkit::Spawn(inner) => {
                 //
                 match &mut inner.0 {
-                    either::Either::Left(testkit) => Effect::Spawn(either::Either::Left(testkit.take().unwrap())),
-                    either::Either::Right(recv) => Effect::Spawn(either::Either::Right(recv.as_ref())),
+                    either::Either::Left(testkit) => {
+                        let effect = SpawnEffect {
+                            testkit_or_message: either::Either::Left(testkit.take().unwrap()),
+                        };
+                        Effect::Spawn(effect)
+                    }
+                    either::Either::Right(recv) => {
+                        let effect = SpawnEffect {
+                            testkit_or_message: either::Either::Right(recv.as_ref()),
+                        };
+                        Effect::Spawn(effect)
+                    }
                 }
             }
         };
@@ -165,7 +183,10 @@ impl<M> Testkit<M> {
 
         match effect_from_actor {
             EffectFromActorToTestkit::Recv(inner) => {
-                let effect_to_actor = RecvEffectFromTestkitToActor(inner.0);
+                let effect_to_actor = RecvEffectFromTestkitToActor {
+                    recv: inner.0,
+                    discarded,
+                };
                 self.recv_effect_sender
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
@@ -256,4 +277,163 @@ where
     );
 
     (Actor::new(task, guard, m_ref), testkit)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use crate::testkit::testkit;
+    use std::time::Duration;
+    use tokio::runtime::Handle;
+    use tokio::time::{sleep, timeout};
+    use tracing::{info_span, Instrument};
+
+    struct NonClone;
+
+    #[tokio::test]
+    async fn test_simple_timeout() {
+        tracing_subscriber::fmt()
+            .with_target(false)
+            .with_line_number(true)
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+
+        let (mut actor, tk) = testkit::<NonClone, _, _, ()>(|mut cell, _| async move {
+            tracing::info!("calling recv with timeout");
+
+            let result = timeout(Duration::from_millis(500), cell.recv()).await;
+            assert!(result.is_err());
+
+            tracing::info!("timeout expired; calling recv");
+            let recv = cell.recv().await;
+            recv.unwrap_message();
+            tracing::info!("message received!");
+
+            (cell, ())
+        });
+
+        let actor_handle = tokio::task::spawn(actor.task.run_task().instrument(info_span!("actor")));
+
+        tracing::info!("sleeping");
+        sleep(Duration::from_millis(1000)).await;
+
+        tracing::info!("sending message to actor");
+        let _ = actor.m_ref.try_send(NonClone);
+
+        let (_tk, _) = tk
+            .test_next_effect(|effect| {
+                tracing::info!("testing the effect");
+                effect.unwrap_recv().recv.unwrap_message();
+            })
+            .instrument(info_span!("testkit"))
+            .await
+            .unwrap();
+
+        actor_handle.await.unwrap();
+    }
+
+    // Test a testkit which is slow to respond to the first effect, so that the actor times out.
+    #[tokio::test]
+    async fn test_slow_testkit() {
+        tracing_subscriber::fmt()
+            .with_target(false)
+            .with_line_number(true)
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+
+        let (mut actor, tk) = testkit::<NonClone, _, _, ()>(|mut cell, _| async move {
+            tracing::info!("calling recv with timeout");
+            let result = timeout(Duration::from_millis(500), cell.recv()).await;
+            assert!(result.is_err());
+
+            tracing::info!("timeout expired; calling recv");
+            let recv = cell.recv().await;
+            recv.unwrap_message();
+            tracing::info!("message received!");
+
+            (cell, ())
+        });
+
+        let actor_handle = tokio::task::spawn(actor.task.run_task().instrument(info_span!("actor")));
+
+        tracing::info!("sending message to actor");
+        let _ = actor.m_ref.try_send(NonClone);
+
+        let tk_handle = tokio::task::spawn_blocking(|| {
+            Handle::current().block_on(
+                async {
+                    let (_tk, _) = tk
+                        .test_next_effect(|effect| {
+                            tracing::info!("effect received; sleeping");
+                            std::thread::sleep(Duration::from_millis(1000));
+
+                            tracing::info!("testing the effect");
+                            effect.unwrap_recv().recv.unwrap_message();
+                        })
+                        .await
+                        .unwrap();
+                }
+                .instrument(info_span!("testkit")),
+            );
+        });
+
+        actor_handle.await.unwrap();
+        tk_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_effect_discard() {
+        tracing_subscriber::fmt()
+            .with_target(false)
+            .with_line_number(true)
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+
+        let (mut actor, tk) = testkit::<u32, _, _, ()>(|mut cell, _| async move {
+            tracing::info!("calling recv");
+            let m = cell.recv().await.unwrap_message();
+            assert_eq!(m, 2);
+            tracing::info!("message received = 2");
+
+            (cell, ())
+        });
+
+        let actor_handle = tokio::task::spawn(actor.task.run_task().instrument(info_span!("actor")));
+
+        tracing::info!("sending 1 to actor");
+        let _ = actor.m_ref.try_send(1);
+
+        tracing::info!("sending 2 to actor");
+        let _ = actor.m_ref.try_send(2);
+
+        let tk_handle = tokio::task::spawn_blocking(|| {
+            Handle::current().block_on(
+                async {
+                    let (tk, _) = tk
+                        .test_next_effect(|effect| {
+                            let mut effect = effect.unwrap_recv();
+                            let m = effect.recv.as_ref().unwrap_message();
+                            assert_eq!(**m, 1);
+                            tracing::info!("the first effect contains 1; discarding the effect");
+                            effect.discard();
+                        })
+                        .await
+                        .unwrap();
+                    let (_tk, _) = tk
+                        .test_next_effect(|effect| {
+                            let effect = effect.unwrap_recv();
+                            let m = effect.recv.as_ref().unwrap_message();
+                            tracing::info!("the second effect contains 2");
+                            assert_eq!(**m, 2);
+                        })
+                        .await
+                        .unwrap();
+                }
+                .instrument(info_span!("testkit")),
+            );
+        });
+
+        actor_handle.await.unwrap();
+        tk_handle.await.unwrap();
+    }
 }

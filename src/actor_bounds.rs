@@ -59,7 +59,8 @@ impl<M> Debug for Recv<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Message(_) => f.write_str("Message"),
-            Self::Stopped(_) => f.write_str("Stopped"),
+            Self::Stopped(None) => f.write_str("Stopped(None)"),
+            Self::Stopped(Some(_)) => f.write_str("Stopped(Some(..))"),
             Self::NoMoreSenders => f.write_str("NoMoreSenders"),
         }
     }

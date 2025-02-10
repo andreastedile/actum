@@ -57,44 +57,48 @@ where
     async fn recv(&mut self) -> Recv<M> {
         assert!(!self.bounds.recv_effect_sender.is_closed());
 
-        if !self.bounds.awaiting_testkit {
-            let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
+        loop {
+            if !self.bounds.awaiting_testkit {
+                let select = future::select(&mut self.stop_receiver, self.m_receiver.next()).await;
 
-            let recv = match select {
-                future::Either::Left((Ok(Stop), _)) => {
-                    self.m_receiver.close();
-                    let m = self.m_receiver.try_next().expect("message channel was closed");
-                    Recv::Stopped(m)
-                }
-                future::Either::Left((Err(oneshot::Canceled), _)) => {
-                    let m = self.m_receiver.try_next().expect("message channel was closed");
-                    Recv::Stopped(m)
-                }
-                future::Either::Right((Some(m), _)) => Recv::Message(m),
-                future::Either::Right((None, _)) => Recv::NoMoreSenders,
-            };
+                let recv = match select {
+                    future::Either::Left((Ok(Stop), _)) => {
+                        self.m_receiver.close();
+                        let m = self.m_receiver.try_next().expect("message channel was closed");
+                        Recv::Stopped(m)
+                    }
+                    future::Either::Left((Err(oneshot::Canceled), _)) => {
+                        let m = self.m_receiver.try_next().expect("message channel was closed");
+                        Recv::Stopped(m)
+                    }
+                    future::Either::Right((Some(m), _)) => Recv::Message(m),
+                    future::Either::Right((None, _)) => Recv::NoMoreSenders,
+                };
 
-            let recv_effect_to_testkit = RecvEffectFromActorToTestkit(recv);
+                let recv_effect_to_testkit = RecvEffectFromActorToTestkit(recv);
 
-            self.bounds
-                .recv_effect_sender
-                .try_send(recv_effect_to_testkit)
-                .expect("could not send the effect to the testkit");
+                self.bounds
+                    .recv_effect_sender
+                    .try_send(recv_effect_to_testkit)
+                    .expect("could not send the effect to the testkit");
 
-            // there is an await next
-            self.bounds.awaiting_testkit = true; // now the future is cancel safe
+                // there is an await next
+                self.bounds.awaiting_testkit = true; // now the future is cancel safe
+            }
+
+            let recv_effect_from_testkit = self
+                .bounds
+                .recv_effect_receiver
+                .next()
+                .await
+                .expect("could not receive the effect back from the testkit");
+
+            self.bounds.awaiting_testkit = false;
+
+            if !recv_effect_from_testkit.discarded {
+                break recv_effect_from_testkit.recv;
+            }
         }
-
-        let recv_effect_from_testkit = self
-            .bounds
-            .recv_effect_receiver
-            .next()
-            .await
-            .expect("could not receive the effect back from the testkit");
-
-        self.bounds.awaiting_testkit = false;
-
-        recv_effect_from_testkit.0
     }
 
     async fn spawn<M2, F, Fut, Ret>(
