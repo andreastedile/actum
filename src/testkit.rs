@@ -45,7 +45,7 @@ use std::future::Future;
 ///     root.m_ref.try_send(42).unwrap();
 ///
 ///     let (testkit, effect) = testkit
-///         .test_next_effect(|effect| {
+ ///         .test_next_effect(async |effect| {
 ///             let m = effect.unwrap_recv().recv.unwrap_message();
 ///             assert_eq!(*m, 42);
 ///         })
@@ -53,7 +53,7 @@ use std::future::Future;
 ///         .unwrap();
 ///
 ///     let (_testkit, _) = testkit
-///         .test_next_effect(|effect| {
+///         .test_next_effect(async |effect| {
 ///             let m = effect.unwrap_recv().recv.unwrap_message();
 ///             assert_eq!(*m, 84);
 ///         })
@@ -129,7 +129,7 @@ impl<M> Testkit<M> {
     /// If the actor has returned, then there will be no more effects to test and None is returned.
     /// Otherwise, the testkit is returned.
     #[must_use]
-    pub async fn test_next_effect<T>(mut self, handler: impl FnOnce(Effect<M>) -> T) -> Option<(Self, T)>
+    pub async fn test_next_effect<T>(mut self, handler: impl AsyncFnOnce(Effect<M>) -> T) -> Option<(Self, T)>
     where
         M: Send + 'static,
     {
@@ -179,7 +179,7 @@ impl<M> Testkit<M> {
             }
         };
 
-        let t = handler(effect);
+        let t = handler(effect).await;
 
         match effect_from_actor {
             EffectFromActorToTestkit::Recv(inner) => {
@@ -316,35 +316,28 @@ mod tests {
         tracing::info!("sending message to actor");
         assert!(actor.m_ref.try_send(NonClone).is_ok());
 
-        let tk_handle = tokio::task::spawn_blocking(|| {
-            Handle::current().block_on(async {
-                let (tk, _) = tk
-                    .test_next_effect(|effect| {
-                        tracing::info!("first effect received; sleeping");
-                        std::thread::sleep(Duration::from_millis(1000));
+        let (tk, _) = tk
+            .test_next_effect(async |effect| {
+                tracing::info!("first effect received; sleeping");
+                tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                        tracing::info!("testing the effect");
-                        effect.unwrap_recv().recv.unwrap_message();
-                    })
-                    .instrument(info_span!("testkit"))
-                    .await
-                    .unwrap();
-
-                let (tk, _) = tk
-                    .test_next_effect(|effect| {
-                        tracing::info!("effect received; testing it");
-                        effect.unwrap_recv().recv.unwrap_message();
-                    })
-                    .instrument(info_span!("testkit"))
-                    .await
-                    .unwrap();
-
-                tk
+                tracing::info!("testing the effect");
+                effect.unwrap_recv().recv.unwrap_message();
             })
-        });
+            .instrument(info_span!("testkit"))
+            .await
+            .unwrap();
+
+        let (_tk, _) = tk
+            .test_next_effect(async |effect| {
+                tracing::info!("effect received; testing it");
+                effect.unwrap_recv().recv.unwrap_message();
+            })
+            .instrument(info_span!("testkit"))
+            .await
+            .unwrap();
 
         actor_handle.await.unwrap();
-        let _ = tk_handle.await.unwrap();
     }
 
     #[tokio::test]
@@ -375,7 +368,7 @@ mod tests {
         let _ = actor.m_ref.try_send(2);
 
         let (tk, _) = tk
-            .test_next_effect(|effect| {
+            .test_next_effect(async |effect| {
                 let mut effect = effect.unwrap_recv();
                 let m = effect.recv.as_ref().unwrap_message();
                 assert_eq!(**m, 1);
@@ -386,7 +379,7 @@ mod tests {
             .await
             .unwrap();
         let (_tk, _) = tk
-            .test_next_effect(|effect| {
+            .test_next_effect(async |effect| {
                 let effect = effect.unwrap_recv();
                 let m = effect.recv.as_ref().unwrap_message();
                 tracing::info!("the second effect contains 2");

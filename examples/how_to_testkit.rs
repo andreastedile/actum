@@ -60,7 +60,7 @@ async fn test() {
     parent.m_ref.try_send(1).unwrap();
 
     let (parent_testkit, _) = parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(async |effect| {
             let recv = effect.unwrap_recv();
             let m = recv.recv.unwrap_message();
             assert_eq!(*m, 1);
@@ -69,7 +69,7 @@ async fn test() {
         .unwrap();
 
     let (parent_testkit, child_testkit) = parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(async |effect| {
             let spawn = effect.unwrap_spawn();
             let testkit = spawn.testkit_or_message.unwrap_left().downcast_unwrap::<u64>();
             testkit
@@ -78,7 +78,7 @@ async fn test() {
         .unwrap();
 
     let (_child_testkit, _) = child_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(async |effect| {
             let recv = effect.unwrap_recv();
             let m = recv.recv.unwrap_message();
             assert_eq!(*m, 2);
@@ -87,7 +87,7 @@ async fn test() {
         .unwrap();
     //
     let (_parent_testkit, _) = parent_testkit
-        .test_next_effect(|effect| {
+        .test_next_effect(async |effect| {
             let recv = effect.unwrap_recv();
             let m = recv.recv.unwrap_message();
             assert_eq!(*m, 2);
