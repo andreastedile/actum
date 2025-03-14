@@ -13,7 +13,7 @@ where
         .spawn(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
         .await
         .unwrap_left();
-    let span = tracing::info_span!("child");
+    let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
     let m2 = cell.recv().await.message().unwrap();
@@ -106,11 +106,11 @@ async fn main() {
         )
         .with_target(false)
         .with_line_number(true)
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::TRACE)
         .init();
 
     let mut parent = actum(generic_parent);
-    let span = tracing::info_span!("parent");
+    let span = tracing::trace_span!("parent");
     let handle = tokio::spawn(parent.task.run_task().instrument(span));
 
     parent.m_ref.try_send(1).unwrap();

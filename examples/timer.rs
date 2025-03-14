@@ -27,11 +27,11 @@ async fn main() {
         )
         .with_target(false)
         .with_line_number(true)
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::TRACE)
         .init();
 
     let root = actum(an_actor);
-    let span = tracing::info_span!("root");
+    let span = tracing::trace_span!("root");
     let handle = tokio::spawn(root.task.run_task().instrument(span));
 
     // let _ = root.m_ref.try_send(1);
