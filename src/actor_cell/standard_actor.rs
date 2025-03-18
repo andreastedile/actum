@@ -5,7 +5,6 @@ use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::drop_guard::ActorDropGuard;
-use crate::resolve_when_one::ResolveWhenOne;
 use either::Either;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -80,8 +79,8 @@ where
         let cell = ActorCell::new(stop_channel.1, m2_channel.1, ());
 
         let m2_ref = ActorRef::new(m2_channel.0);
-        let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
-        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
+        let tracker = self.tracker.get_or_insert_default();
+        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(tracker.make_child()));
 
         Either::Left(ActorToSpawn::new(task, guard, m2_ref))
     }

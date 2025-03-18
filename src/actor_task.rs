@@ -1,6 +1,6 @@
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
-use crate::resolve_when_one::ResolveWhenOne;
+use crate::children_tracker::WakeParentOnDrop;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -14,18 +14,19 @@ pub struct ActorTask<M, F, Fut, Ret, D> {
     fut: PhantomData<Fut>,
     cell: ActorCell<M, D>,
     actor_ref: ActorRef<M>,
-    _parent: Option<ResolveWhenOne>,
+    /// None if there is no parent (thus, the actor is the root of the tree).
+    _waker: Option<WakeParentOnDrop>,
 }
 
 impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
-    pub const fn new(f: F, cell: ActorCell<M, D>, actor_ref: ActorRef<M>, parent: Option<ResolveWhenOne>) -> Self {
+    pub const fn new(f: F, cell: ActorCell<M, D>, actor_ref: ActorRef<M>, waker: Option<WakeParentOnDrop>) -> Self {
         Self {
             f,
             ret: PhantomData,
             fut: PhantomData,
             cell,
             actor_ref,
-            _parent: parent,
+            _waker: waker,
         }
     }
 }
@@ -43,9 +44,9 @@ where
         let fut = f(self.cell, self.actor_ref);
         let (mut cell, ret) = fut.await;
 
-        if let Some(subtree) = cell.subtree.take() {
-            tracing::trace!("join children");
-            subtree.await;
+        if let Some(tracker) = cell.tracker.take() {
+            tracing::trace!("joining children");
+            tracker.join_all().await;
         }
 
         ret

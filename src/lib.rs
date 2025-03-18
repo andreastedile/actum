@@ -11,10 +11,10 @@ pub mod actor_cell;
 pub mod actor_ref;
 pub mod actor_task;
 pub mod actor_to_spawn;
+pub mod children_tracker;
 pub mod drop_guard;
 pub mod effect;
 pub mod prelude;
-mod resolve_when_one;
 pub mod testkit;
 
 /// Define the root actor of the actor tree hierarchy.

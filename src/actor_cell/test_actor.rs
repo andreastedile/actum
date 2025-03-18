@@ -9,7 +9,6 @@ use crate::effect::{
     RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, SpawnEffectFromActorToTestkit,
     SpawnEffectFromTestkitToActor,
 };
-use crate::resolve_when_one::ResolveWhenOne;
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
 use futures::{future, FutureExt, StreamExt};
@@ -189,8 +188,8 @@ where
         let cell = ActorCell::new(stop_channel.1, m2_channel.1, bounds);
 
         let m2_ref = ActorRef::new(m2_channel.0);
-        let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
-        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
+        let tracker = self.tracker.get_or_insert_default();
+        let task = ActorTask::new(f, cell, m2_ref.clone(), Some(tracker.make_child()));
 
         let testkit = Testkit::new(
             recv_effect_actor_to_testkit_channel.1,
