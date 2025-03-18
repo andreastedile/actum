@@ -24,9 +24,9 @@ use std::future::Future;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
+/// async fn root<A>(mut cell: A, mut me: ActorRef<u64>) -> (A, ())
 /// where
-///     AB: Actor<u64>,
+///     A: Actor<u64>,
 /// {
 ///     let m1 = cell.recv().await.message().unwrap();
 ///     me.try_send(m1 * 2).unwrap();
@@ -71,9 +71,9 @@ use std::future::Future;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn parent<AB>(mut cell: AB, _me: ActorRef<u64>) -> (AB, ())
+/// async fn parent<A>(mut cell: A, _me: ActorRef<u64>) -> (A, ())
 /// where
-///     AB: Actor<u64>,
+///     A: Actor<u64>,
 /// {
 ///     let child = cell.create_child(child).await.unwrap_left();
 ///     let handle = tokio::spawn(child.task.run_task());
@@ -81,9 +81,9 @@ use std::future::Future;
 ///     (cell, ())
 /// }
 ///
-/// async fn child<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
+/// async fn child<A>(mut cell: A, _me: ActorRef<u32>) -> (A, ())
 /// where
-///     AB: Actor<u32>,
+///     A: Actor<u32>,
 /// {
 ///     println!("child");
 ///     (cell, ())

@@ -9,17 +9,17 @@ pub trait Actor<M>: Send + 'static
 where
     M: Send + 'static,
 {
-    type ChildActorBoundsType<M2>: Send + 'static
+    type ChildActorDependency<M2>: Send + 'static
     where
         M2: Send + 'static;
-    type ChildActorBounds<M2>: Actor<M2>
+    type ChildActor<M2>: Actor<M2>
     where
         M2: Send + 'static;
-    type SpawnOut<M2, F, Fut, Ret>: RunTask<Ret>
+    type HasRunTask<M2, F, Fut, Ret>: RunTask<Ret>
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActorBounds<M2>, Ret)> + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
     /// Asynchronously receive the next message.
@@ -28,11 +28,11 @@ where
     fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = Either<ActorToSpawn<M2, Self::SpawnOut<M2, F, Fut, Ret>>, Option<M>>> + Send + '_
+    ) -> impl Future<Output = Either<ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret>>, Option<M>>> + Send + '_
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActorBounds<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActorBounds<M2>, Ret)> + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 }
 

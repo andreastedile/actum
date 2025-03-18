@@ -16,9 +16,9 @@ impl<M> Actor<M> for ActorCell<M, ()>
 where
     M: Send + 'static,
 {
-    type ChildActorBoundsType<M2: Send + 'static> = ();
-    type ChildActorBounds<M2: Send + 'static> = ActorCell<M2, ()>;
-    type SpawnOut<M2, F, Fut, Ret>
+    type ChildActorDependency<M2: Send + 'static> = ();
+    type ChildActor<M2: Send + 'static> = ActorCell<M2, ()>;
+    type HasRunTask<M2, F, Fut, Ret>
         = ActorTask<M2, F, Fut, Ret, ()>
     where
         M2: Send + 'static,

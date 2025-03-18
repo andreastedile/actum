@@ -3,9 +3,9 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn an_actor<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
+async fn an_actor<A>(mut cell: A, _me: ActorRef<u32>) -> (A, ())
 where
-    AB: Actor<u32>,
+    A: Actor<u32>,
 {
     tokio::select! {
         Recv::Message(m) = cell.recv() => {

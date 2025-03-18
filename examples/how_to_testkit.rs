@@ -1,9 +1,9 @@
 use actum::prelude::*;
 use tracing::Instrument;
 
-async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
+async fn generic_parent<A>(mut cell: A, me: ActorRef<u64>) -> (A, ())
 where
-    AB: Actor<u64>,
+    A: Actor<u64>,
 {
     let m1 = cell.recv().await.message().unwrap();
     tracing::info!(recv = m1);
@@ -24,9 +24,9 @@ where
     (cell, ())
 }
 
-async fn generic_child<AB>(mut cell: AB, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64) -> (AB, ())
+async fn generic_child<A>(mut cell: A, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64) -> (A, ())
 where
-    AB: Actor<u64>,
+    A: Actor<u64>,
 {
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();

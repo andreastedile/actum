@@ -52,9 +52,9 @@ impl<M> Actor<M> for ActorCell<M, TestBounds<M>>
 where
     M: Send + 'static,
 {
-    type ChildActorBoundsType<M2: Send + 'static> = TestBounds<M2>;
-    type ChildActorBounds<M2: Send + 'static> = ActorCell<M2, TestBounds<M2>>;
-    type SpawnOut<M2, F, Fut, Ret>
+    type ChildActorDependency<M2: Send + 'static> = TestBounds<M2>;
+    type ChildActor<M2: Send + 'static> = ActorCell<M2, TestBounds<M2>>;
+    type HasRunTask<M2, F, Fut, Ret>
         = ActorTask<M2, F, Fut, Ret, TestBounds<M2>>
     where
         M2: Send + 'static,
@@ -63,19 +63,19 @@ where
         Ret: Send + 'static;
 
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
-        if self.bounds.state == RecvFutureStateMachine::S1 {
+        if self.dependency.state == RecvFutureStateMachine::S1 {
             // If the state is S1, it means that the previous future was dropped while it was waiting for the effect to
             // come back from the testkit.
-            self.bounds.state = RecvFutureStateMachine::S2;
+            self.dependency.state = RecvFutureStateMachine::S2;
         }
 
         poll_fn(|cx| {
-            if self.bounds.recv_effect_sender.is_closed() {
+            if self.dependency.recv_effect_sender.is_closed() {
                 panic!("the testkit has dropped");
             }
 
             loop {
-                match self.bounds.state {
+                match self.dependency.state {
                     RecvFutureStateMachine::S0 => {
                         let select =
                             ready!(future::select(&mut self.stop_receiver, self.m_receiver.next()).poll_unpin(cx));
@@ -96,35 +96,35 @@ where
 
                         let effect_out = RecvEffectFromActorToTestkit(recv);
 
-                        self.bounds
+                        self.dependency
                             .recv_effect_sender
                             .try_send(effect_out)
                             .expect("could not send the effect to the testkit");
 
-                        self.bounds.state = RecvFutureStateMachine::S1;
+                        self.dependency.state = RecvFutureStateMachine::S1;
                     }
                     RecvFutureStateMachine::S1 => {
-                        let effect_in = ready!(self.bounds.recv_effect_receiver.poll_next_unpin(cx))
+                        let effect_in = ready!(self.dependency.recv_effect_receiver.poll_next_unpin(cx))
                             .expect("could not receive effect back from the testkit");
 
-                        self.bounds.state = RecvFutureStateMachine::S0;
+                        self.dependency.state = RecvFutureStateMachine::S0;
 
                         if !effect_in.discarded {
                             return Poll::Ready(effect_in.recv);
                         } // else: poll the channels in the next iteration
                     }
                     RecvFutureStateMachine::S2 => {
-                        let effect_in = ready!(self.bounds.recv_effect_receiver.poll_next_unpin(cx))
+                        let effect_in = ready!(self.dependency.recv_effect_receiver.poll_next_unpin(cx))
                             .expect("could not receive the effect back from the testkit");
 
                         let effect_out = RecvEffectFromActorToTestkit(effect_in.recv);
 
-                        self.bounds
+                        self.dependency
                             .recv_effect_sender
                             .try_send(effect_out)
                             .expect("could not send the effect to the testkit");
 
-                        self.bounds.state = RecvFutureStateMachine::S1;
+                        self.dependency.state = RecvFutureStateMachine::S1;
                     }
                 }
             }
@@ -141,7 +141,7 @@ where
         Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
         Ret: Send + 'static,
     {
-        assert!(!self.bounds.spawn_effect_sender.is_closed());
+        assert!(!self.dependency.spawn_effect_sender.is_closed());
 
         let stopped = match self.stop_receiver.try_recv() {
             Ok(None) => false,
@@ -156,13 +156,13 @@ where
             let m = self.m_receiver.try_next().expect("message channel was closed");
             let spawn_effect_actor_to_testkit = SpawnEffectFromActorToTestkit(either::Either::Right(m));
 
-            self.bounds
+            self.dependency
                 .spawn_effect_sender
                 .try_send(spawn_effect_actor_to_testkit)
                 .expect("could not send the effect to the testkit");
 
             let effect_from_testkit = self
-                .bounds
+                .dependency
                 .spawn_effect_receiver
                 .next()
                 .await
@@ -200,13 +200,13 @@ where
         );
         let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit(either::Either::Left(Some(testkit.into())));
 
-        self.bounds
+        self.dependency
             .spawn_effect_sender
             .try_send(spawn_effect_to_testkit)
             .expect("could not send the effect to the testkit");
 
         let spawn_effect_from_testkit = self
-            .bounds
+            .dependency
             .spawn_effect_receiver
             .next()
             .await

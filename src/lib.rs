@@ -27,9 +27,9 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
+/// async fn root<A>(mut cell: A, mut me: ActorRef<u64>) -> (A, ())
 /// where
-///     AB: Actor<u64>,
+///     A: Actor<u64>,
 /// {
 ///     let m = cell.recv().await.message().unwrap();
 ///     println!("{}", m);
@@ -64,9 +64,9 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<AB>(mut cell: AB, me: ActorRef<u64>, mut vec: Vec<u64>) -> (AB, ())
+/// async fn root<A>(mut cell: A, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
 /// where
-///     AB: Actor<u64>,
+///     A: Actor<u64>,
 /// {
 ///     let m = cell.recv().await.message().unwrap();
 ///     vec.push(m);
