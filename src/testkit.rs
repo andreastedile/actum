@@ -64,7 +64,7 @@ use std::future::Future;
 /// }
 /// ```
 ///
-/// Test whether the actor called [spawn](crate::actor_bounds::ActorBounds::spawn).
+/// Test whether the actor called [spawn](crate::actor_bounds::ActorBounds::create_child).
 ///
 /// # Example
 /// ```
@@ -75,7 +75,7 @@ use std::future::Future;
 /// where
 ///     AB: ActorBounds<u64>,
 /// {
-///     let child = cell.spawn(child).await.unwrap_left();
+///     let child = cell.create_child(child).await.unwrap_left();
 ///     let handle = tokio::spawn(child.task.run_task());
 ///     handle.await.unwrap();
 ///     (cell, ())

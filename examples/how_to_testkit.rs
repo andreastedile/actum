@@ -10,7 +10,7 @@ where
 
     let parent = me.clone();
     let child = cell
-        .spawn(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
+        .create_child(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
         .await
         .unwrap_left();
     let span = tracing::trace_span!("child");

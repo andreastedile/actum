@@ -14,7 +14,7 @@ async fn parent<AB>(mut cell: AB, _me: ActorRef<()>) -> (AB, ())
 where
     AB: ActorBounds<()>,
 {
-    let child = cell.spawn(child).await.unwrap_left();
+    let child = cell.create_child(child).await.unwrap_left();
     let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 

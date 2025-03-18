@@ -49,7 +49,7 @@ where
         })
     }
 
-    async fn spawn<M2, F, Fut, Ret>(&mut self, f: F) -> Either<Actor<M2, ActorTask<M2, F, Fut, Ret, ()>>, Option<M>>
+    async fn create_child<M2, F, Fut, Ret>(&mut self, f: F) -> Either<Actor<M2, ActorTask<M2, F, Fut, Ret, ()>>, Option<M>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,

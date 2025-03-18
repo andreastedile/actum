@@ -131,7 +131,7 @@ where
         })
     }
 
-    async fn spawn<M2, F, Fut, Ret>(
+    async fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
     ) -> either::Either<Actor<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>, Option<M>>

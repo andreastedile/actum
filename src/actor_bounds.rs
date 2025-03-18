@@ -1,6 +1,6 @@
 use crate::actor::Actor;
-use crate::actor_task::RunTask;
 use crate::actor_ref::ActorRef;
+use crate::actor_task::RunTask;
 use either::Either;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
@@ -25,8 +25,7 @@ where
     /// Asynchronously receive the next message.
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
 
-    /// Arrange a child actor.
-    fn spawn<M2, F, Fut, Ret>(
+    fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
     ) -> impl Future<Output = Either<Actor<M2, Self::SpawnOut<M2, F, Fut, Ret>>, Option<M>>> + Send + '_
