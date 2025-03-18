@@ -15,7 +15,7 @@ use futures::{future, FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
 use std::task::{ready, Poll};
 
-pub struct TestBounds<M> {
+pub struct TestExtension<M> {
     recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit<M>>,
@@ -23,7 +23,7 @@ pub struct TestBounds<M> {
     state: RecvFutureStateMachine,
 }
 
-impl<M> TestBounds<M> {
+impl<M> TestExtension<M> {
     pub const fn new(
         recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
@@ -47,18 +47,18 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M> Actor<M> for ActorCell<M, TestBounds<M>>
+impl<M> Actor<M> for ActorCell<M, TestExtension<M>>
 where
     M: Send + 'static,
 {
-    type ChildActorDependency<M2: Send + 'static> = TestBounds<M2>;
-    type ChildActor<M2: Send + 'static> = ActorCell<M2, TestBounds<M2>>;
+    type ChildActorDependency<M2: Send + 'static> = TestExtension<M2>;
+    type ChildActor<M2: Send + 'static> = ActorCell<M2, TestExtension<M2>>;
     type HasRunTask<M2, F, Fut, Ret>
-        = ActorTask<M2, F, Fut, Ret, TestBounds<M2>>
+        = ActorTask<M2, F, Fut, Ret, TestExtension<M2>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
+        F: FnOnce(ActorCell<M2, TestExtension<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<M2, TestExtension<M2>>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_ {
@@ -133,11 +133,11 @@ where
     async fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> either::Either<ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>, Option<M>>
+    ) -> either::Either<ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, TestExtension<M2>>>, Option<M>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<M2, TestBounds<M2>>, Ret)> + Send + 'static,
+        F: FnOnce(ActorCell<M2, TestExtension<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<M2, TestExtension<M2>>, Ret)> + Send + 'static,
         Ret: Send + 'static,
     {
         assert!(!self.dependency.spawn_effect_sender.is_closed());
@@ -179,7 +179,7 @@ where
         let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M2>>(1);
         let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit<M2>>(1);
         let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor<M2>>(1);
-        let bounds = TestBounds::new(
+        let bounds = TestExtension::new(
             recv_effect_actor_to_testkit_channel.0,
             recv_effect_testkit_to_actor_channel.1,
             spawn_effect_actor_to_testkit_channel.0,

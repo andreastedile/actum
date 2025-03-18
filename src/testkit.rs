@@ -1,4 +1,4 @@
-use crate::actor_cell::test_actor::TestBounds;
+use crate::actor_cell::test_actor::TestExtension;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
@@ -246,11 +246,11 @@ impl AnyTestkit {
     }
 }
 
-pub fn testkit<M, F, Fut, Ret>(f: F) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestBounds<M>>>, Testkit<M>)
+pub fn testkit<M, F, Fut, Ret>(f: F) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>, Testkit<M>)
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<M, TestBounds<M>>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<M, TestBounds<M>>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<M, TestExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<M, TestExtension<M>>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let stop_channel = oneshot::channel::<Stop>();
@@ -261,7 +261,7 @@ where
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit<M>>(1);
     let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor<M>>(1);
-    let bounds = TestBounds::new(
+    let bounds = TestExtension::new(
         recv_effect_actor_to_testkit_channel.0,
         recv_effect_testkit_to_actor_channel.1,
         spawn_effect_actor_to_testkit_channel.0,
