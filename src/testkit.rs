@@ -8,6 +8,7 @@ use crate::effect::{
     Effect, EffectFromActorToTestkit, RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
     SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
 };
+use crate::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 use futures::{future, StreamExt};
 use std::any::Any;
@@ -23,14 +24,14 @@ use std::future::Future;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn root<A>(mut cell: A, mut me: ActorRef<u64>) -> (A, ())
+/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64>,
 /// {
-///     let m1 = cell.recv().await.message().unwrap();
+///     let m1 = cell.recv(&mut receiver).await.message().unwrap();
 ///     me.try_send(m1 * 2).unwrap();
 ///
-///     let m2 = cell.recv().await.message().unwrap();
+///     let m2 = cell.recv(&mut receiver).await.message().unwrap();
 ///     debug_assert_eq!(m2, m1 * 2);
 ///
 ///     (cell, ())
@@ -70,7 +71,7 @@ use std::future::Future;
 /// use actum::prelude::*;
 /// use actum::testkit::testkit;
 ///
-/// async fn parent<A>(mut cell: A, _me: ActorRef<u64>) -> (A, ())
+/// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64>,
 /// {
@@ -80,7 +81,7 @@ use std::future::Future;
 ///     (cell, ())
 /// }
 ///
-/// async fn child<A>(mut cell: A, _me: ActorRef<u32>) -> (A, ())
+/// async fn child<A>(mut cell: A, _receiver: MessageReceiver<u32>, _me: ActorRef<u32>) -> (A, ())
 /// where
 ///     A: Actor<u32>,
 /// {
@@ -229,8 +230,8 @@ impl AnyTestkit {
 pub fn testkit<M, F, Fut, Ret>(f: F) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>, Testkit<M>)
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<M, TestExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<M, TestExtension<M>>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<TestExtension<M>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<TestExtension<M>>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let m_channel = mpsc::channel::<M>(100);
@@ -239,16 +240,16 @@ where
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
     let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
-    let extension = TestExtension::new(
+    let extension = TestExtension::<M>::new(
         recv_effect_actor_to_testkit_channel.0,
         recv_effect_testkit_to_actor_channel.1,
         spawn_effect_actor_to_testkit_channel.0,
         spawn_effect_testkit_to_actor_channel.1,
     );
-    let cell = ActorCell::new(m_channel.1, extension);
-
+    let cell = ActorCell::<TestExtension<M>>::new(extension);
+    let receiver = MessageReceiver::<M>::new(m_channel.1);
     let actor_ref = ActorRef::new(m_channel.0);
-    let task = ActorTask::new(f, cell, actor_ref.clone(), None);
+    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
     let testkit = Testkit::new(
         recv_effect_actor_to_testkit_channel.1,
         recv_effect_testkit_to_actor_channel.0,
@@ -278,13 +279,13 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = testkit::<NonClone, _, _, ()>(|mut cell, _| async move {
+        let (mut actor, mut tk) = testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
             tracing::info!("calling recv with timeout");
-            let result = timeout(Duration::from_millis(500), cell.recv()).await;
+            let result = timeout(Duration::from_millis(500), cell.recv(&mut receiver)).await;
             assert!(result.is_err());
 
             tracing::info!("timeout expired; calling recv");
-            let recv = cell.recv().await;
+            let recv = cell.recv(&mut receiver).await;
             recv.unwrap_message();
             tracing::info!("message received!");
 
@@ -328,9 +329,9 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = testkit::<u32, _, _, ()>(|mut cell, _| async move {
+        let (mut actor, mut tk) = testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
             tracing::info!("calling recv");
-            let m = cell.recv().await.unwrap_message();
+            let m = cell.recv(&mut receiver).await.unwrap_message();
             assert_eq!(m, 2);
             tracing::info!("message received = 2");
 

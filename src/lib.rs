@@ -2,6 +2,7 @@ use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
+use crate::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 use std::future::Future;
 
@@ -12,6 +13,7 @@ pub mod actor_task;
 pub mod actor_to_spawn;
 pub mod children_tracker;
 pub mod effect;
+mod message_receiver;
 pub mod prelude;
 pub mod testkit;
 
@@ -25,11 +27,11 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A>(mut cell: A, mut me: ActorRef<u64>) -> (A, ())
+/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64>,
 /// {
-///     let m = cell.recv().await.message().unwrap();
+///     let m = cell.recv(&mut receiver).await.message().unwrap();
 ///     println!("{}", m);
 ///     (cell, ())
 /// }
@@ -48,8 +50,8 @@ pub mod testkit;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut root = actum::<u64, _, _, _>(|mut cell, me| async move {
-///         let m = cell.recv().await.message().unwrap();
+///     let mut root = actum::<u64, _, _, _>(|mut cell, mut receiver, me| async move {
+///         let m = cell.recv(&mut receiver).await.message().unwrap();
 ///         println!("{}", m);
 ///         (cell, ())
 ///     });
@@ -62,11 +64,11 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A>(mut cell: A, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
+/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64>,
 /// {
-///     let m = cell.recv().await.message().unwrap();
+///     let m = cell.recv(&mut receiver).await.message().unwrap();
 ///     vec.push(m);
 ///     for m in vec {
 ///         println!("{}", m);
@@ -77,7 +79,7 @@ pub mod testkit;
 /// #[tokio::main]
 /// async fn main() {
 ///     let vec = vec![1, 2, 3];
-///     let mut root = actum(|cell, me| root(cell, me, vec));
+///     let mut root = actum(|cell, receiver, me| root(cell, receiver, me, vec));
 ///     root.actor_ref.try_send(4).unwrap();
 ///     root.task.run_task().await;
 /// }
@@ -85,15 +87,17 @@ pub mod testkit;
 pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, ()>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<M, ()>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<()>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let m_channel = mpsc::channel::<M>(100);
+    let receiver = MessageReceiver::<M>::new(m_channel.1);
+    let actor_ref = ActorRef::<M>::new(m_channel.0);
 
-    let cell = ActorCell::new(m_channel.1, ());
+    let cell = ActorCell::<()>::new(());
 
-    let actor_ref = ActorRef::new(m_channel.0);
-    let task = ActorTask::new(f, cell, actor_ref.clone(), None);
+    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
+
     ActorToSpawn::new(task, actor_ref)
 }

@@ -1,21 +1,21 @@
 use actum::prelude::*;
 use tracing::Instrument;
 
-async fn generic_parent<A>(mut cell: A, me: ActorRef<u64>) -> (A, ())
+async fn generic_parent<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: ActorRef<u64>) -> (A, ())
 where
     A: Actor<u64>,
 {
-    let m1 = cell.recv().await.message().unwrap();
+    let m1 = cell.recv(&mut receiver).await.message().unwrap();
     tracing::info!(recv = m1);
 
     let parent = me.clone();
     let child = cell
-        .create_child(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
+        .create_child(move |cell, receiver, me| async move { generic_child(cell, receiver, me, parent, m1).await })
         .await;
     let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
-    let m2 = cell.recv().await.message().unwrap();
+    let m2 = cell.recv(&mut receiver).await.message().unwrap();
     tracing::info!(recv = m2);
 
     assert_eq!(m2, m1 * 2);
@@ -23,14 +23,20 @@ where
     (cell, ())
 }
 
-async fn generic_child<A>(mut cell: A, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64) -> (A, ())
+async fn generic_child<A>(
+    mut cell: A,
+    mut receiver: MessageReceiver<u64>,
+    mut me: ActorRef<u64>,
+    mut parent: ActorRef<u64>,
+    m: u64,
+) -> (A, ())
 where
     A: Actor<u64>,
 {
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
 
-    let m = cell.recv().await.message().unwrap();
+    let m = cell.recv(&mut receiver).await.message().unwrap();
     tracing::info!(recv = m);
 
     tracing::info!(try_send = m);

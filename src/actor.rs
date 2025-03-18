@@ -1,6 +1,7 @@
 use crate::actor_ref::ActorRef;
 use crate::actor_task::RunTask;
 use crate::actor_to_spawn::ActorToSpawn;
+use crate::message_receiver::MessageReceiver;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
@@ -17,12 +18,12 @@ where
     type HasRunTask<M2, F, Fut, Ret>: RunTask<Ret>
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
     /// Asynchronously receive the next message.
-    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
+    fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a;
 
     fn create_child<M2, F, Fut, Ret>(
         &mut self,
@@ -30,7 +31,7 @@ where
     ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret>>> + Send + '_
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
         Ret: Send + 'static;
 }

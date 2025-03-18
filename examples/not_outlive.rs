@@ -10,7 +10,7 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn parent<A>(mut cell: A, _me: ActorRef<()>) -> (A, ())
+async fn parent<A>(mut cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
 where
     A: Actor<()>,
 {
@@ -23,7 +23,7 @@ where
     (cell, ())
 }
 
-async fn child<A>(cell: A, _me: ActorRef<()>) -> (A, ())
+async fn child<A>(cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
 where
     A: Actor<()>,
 {

@@ -5,3 +5,4 @@ pub use crate::actor_ref::ActorRef;
 pub use crate::actor_task::RunTask;
 pub use crate::actor_to_spawn::ActorToSpawn;
 pub use crate::actum;
+pub use crate::message_receiver::MessageReceiver;
