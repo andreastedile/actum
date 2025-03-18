@@ -10,7 +10,7 @@ use crate::actor_cell::Stop;
 ///
 /// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u64>,
+///     AB: Actor<u64>,
 /// {
 ///     while let Recv::Message(m) = cell.recv().await {
 ///         println!("{}", m);

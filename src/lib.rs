@@ -6,7 +6,7 @@ use crate::drop_guard::ActorDropGuard;
 use futures::channel::{mpsc, oneshot};
 use std::future::Future;
 
-pub mod actor_bounds;
+pub mod actor;
 pub mod actor_cell;
 pub mod actor_ref;
 pub mod actor_task;
@@ -29,7 +29,7 @@ pub mod testkit;
 ///
 /// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u64>,
+///     AB: Actor<u64>,
 /// {
 ///     let m = cell.recv().await.message().unwrap();
 ///     println!("{}", m);
@@ -66,7 +66,7 @@ pub mod testkit;
 ///
 /// async fn root<AB>(mut cell: AB, me: ActorRef<u64>, mut vec: Vec<u64>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u64>,
+///     AB: Actor<u64>,
 /// {
 ///     let m = cell.recv().await.message().unwrap();
 ///     vec.push(m);

@@ -1,4 +1,4 @@
-use crate::actor_bounds::{ActorBounds, Recv};
+use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
@@ -48,7 +48,7 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M> ActorBounds<M> for ActorCell<M, TestBounds<M>>
+impl<M> Actor<M> for ActorCell<M, TestBounds<M>>
 where
     M: Send + 'static,
 {

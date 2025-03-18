@@ -1,4 +1,4 @@
-use crate::actor_bounds::{ActorBounds, Recv};
+use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
@@ -12,7 +12,7 @@ use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
 use std::task::Poll;
 
-impl<M> ActorBounds<M> for ActorCell<M, ()>
+impl<M> Actor<M> for ActorCell<M, ()>
 where
     M: Send + 'static,
 {

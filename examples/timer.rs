@@ -5,7 +5,7 @@ use actum::prelude::*;
 
 async fn an_actor<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
 where
-    AB: ActorBounds<u32>,
+    AB: Actor<u32>,
 {
     tokio::select! {
         Recv::Message(m) = cell.recv() => {

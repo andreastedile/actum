@@ -5,14 +5,14 @@ use either::Either;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
-pub trait ActorBounds<M>: Send + 'static
+pub trait Actor<M>: Send + 'static
 where
     M: Send + 'static,
 {
     type ChildActorBoundsType<M2>: Send + 'static
     where
         M2: Send + 'static;
-    type ChildActorBounds<M2>: ActorBounds<M2>
+    type ChildActorBounds<M2>: Actor<M2>
     where
         M2: Send + 'static;
     type SpawnOut<M2, F, Fut, Ret>: RunTask<Ret>

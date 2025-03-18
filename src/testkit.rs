@@ -18,7 +18,7 @@ use std::future::Future;
 ///
 /// # Examples
 ///
-/// Test whether the actor called [recv](crate::actor_bounds::ActorBounds::recv).
+/// Test whether the actor called [recv](crate::actor::Actor::recv).
 ///
 /// ```
 /// use actum::prelude::*;
@@ -26,7 +26,7 @@ use std::future::Future;
 ///
 /// async fn root<AB>(mut cell: AB, mut me: ActorRef<u64>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u64>,
+///     AB: Actor<u64>,
 /// {
 ///     let m1 = cell.recv().await.message().unwrap();
 ///     me.try_send(m1 * 2).unwrap();
@@ -64,7 +64,7 @@ use std::future::Future;
 /// }
 /// ```
 ///
-/// Test whether the actor called [spawn](crate::actor_bounds::ActorBounds::create_child).
+/// Test whether the actor called [spawn](crate::actor::Actor::create_child).
 ///
 /// # Example
 /// ```
@@ -73,7 +73,7 @@ use std::future::Future;
 ///
 /// async fn parent<AB>(mut cell: AB, _me: ActorRef<u64>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u64>,
+///     AB: Actor<u64>,
 /// {
 ///     let child = cell.create_child(child).await.unwrap_left();
 ///     let handle = tokio::spawn(child.task.run_task());
@@ -83,7 +83,7 @@ use std::future::Future;
 ///
 /// async fn child<AB>(mut cell: AB, _me: ActorRef<u32>) -> (AB, ())
 /// where
-///     AB: ActorBounds<u32>,
+///     AB: Actor<u32>,
 /// {
 ///     println!("child");
 ///     (cell, ())

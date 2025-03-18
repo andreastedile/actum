@@ -3,7 +3,7 @@ use tracing::Instrument;
 
 async fn generic_parent<AB>(mut cell: AB, me: ActorRef<u64>) -> (AB, ())
 where
-    AB: ActorBounds<u64>,
+    AB: Actor<u64>,
 {
     let m1 = cell.recv().await.message().unwrap();
     tracing::info!(recv = m1);
@@ -26,7 +26,7 @@ where
 
 async fn generic_child<AB>(mut cell: AB, mut me: ActorRef<u64>, mut parent: ActorRef<u64>, m: u64) -> (AB, ())
 where
-    AB: ActorBounds<u64>,
+    AB: Actor<u64>,
 {
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
