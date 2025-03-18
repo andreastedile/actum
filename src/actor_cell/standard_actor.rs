@@ -1,9 +1,9 @@
-use crate::actor::Actor;
 use crate::actor_bounds::{ActorBounds, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
+use crate::actor_to_spawn::ActorToSpawn;
 use crate::drop_guard::ActorDropGuard;
 use crate::resolve_when_one::ResolveWhenOne;
 use either::Either;
@@ -49,7 +49,10 @@ where
         })
     }
 
-    async fn create_child<M2, F, Fut, Ret>(&mut self, f: F) -> Either<Actor<M2, ActorTask<M2, F, Fut, Ret, ()>>, Option<M>>
+    async fn create_child<M2, F, Fut, Ret>(
+        &mut self,
+        f: F,
+    ) -> Either<ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, ()>>, Option<M>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -80,6 +83,6 @@ where
         let subtree = self.subtree.get_or_insert(ResolveWhenOne::new());
         let task = ActorTask::new(f, cell, m2_ref.clone(), Some(subtree.clone()));
 
-        Either::Left(Actor::new(task, guard, m2_ref))
+        Either::Left(ActorToSpawn::new(task, guard, m2_ref))
     }
 }

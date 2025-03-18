@@ -1,8 +1,8 @@
-use crate::actor::Actor;
 use crate::actor_cell::test_actor::TestBounds;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
+use crate::actor_to_spawn::ActorToSpawn;
 use crate::drop_guard::ActorDropGuard;
 
 use crate::effect::{
@@ -246,7 +246,7 @@ impl AnyTestkit {
     }
 }
 
-pub fn testkit<M, F, Fut, Ret>(f: F) -> (Actor<M, ActorTask<M, F, Fut, Ret, TestBounds<M>>>, Testkit<M>)
+pub fn testkit<M, F, Fut, Ret>(f: F) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestBounds<M>>>, Testkit<M>)
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<M, TestBounds<M>>, ActorRef<M>) -> Fut + Send + 'static,
@@ -278,7 +278,7 @@ where
         spawn_effect_testkit_to_actor_channel.0,
     );
 
-    (Actor::new(task, guard, m_ref), testkit)
+    (ActorToSpawn::new(task, guard, m_ref), testkit)
 }
 
 #[cfg(test)]

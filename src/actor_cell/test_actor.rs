@@ -1,9 +1,9 @@
-use crate::actor::Actor;
 use crate::actor_bounds::{ActorBounds, Recv};
-use crate::actor_task::ActorTask;
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;
+use crate::actor_task::ActorTask;
+use crate::actor_to_spawn::ActorToSpawn;
 use crate::drop_guard::ActorDropGuard;
 use crate::effect::{
     RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, SpawnEffectFromActorToTestkit,
@@ -134,7 +134,7 @@ where
     async fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> either::Either<Actor<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>, Option<M>>
+    ) -> either::Either<ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, TestBounds<M2>>>, Option<M>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<M2, TestBounds<M2>>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -214,6 +214,6 @@ where
 
         assert!(spawn_effect_from_testkit.0.is_left());
 
-        either::Either::Left(Actor::new(task, guard, m2_ref))
+        either::Either::Left(ActorToSpawn::new(task, guard, m2_ref))
     }
 }
