@@ -42,7 +42,7 @@ use std::future::Future;
 ///     let (mut root, mut testkit) = testkit(root);
 ///     let handle = tokio::spawn(root.task.run_task());
 ///
-///     root.m_ref.try_send(42).unwrap();
+///     root.actor_ref.try_send(42).unwrap();
 ///
 ///     let _ = testkit
 ///         .test_next_effect(async |effect| {
@@ -269,8 +269,8 @@ where
     );
     let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
 
-    let m_ref = ActorRef::new(m_channel.0);
-    let task = ActorTask::new(f, cell, m_ref.clone(), None);
+    let actor_ref = ActorRef::new(m_channel.0);
+    let task = ActorTask::new(f, cell, actor_ref.clone(), None);
     let testkit = Testkit::new(
         recv_effect_actor_to_testkit_channel.1,
         recv_effect_testkit_to_actor_channel.0,
@@ -278,7 +278,7 @@ where
         spawn_effect_testkit_to_actor_channel.0,
     );
 
-    (ActorToSpawn::new(task, guard, m_ref), testkit)
+    (ActorToSpawn::new(task, guard, actor_ref), testkit)
 }
 
 #[cfg(test)]
@@ -316,7 +316,7 @@ mod tests {
         let actor_handle = tokio::spawn(actor.task.run_task().instrument(info_span!("actor")));
 
         tracing::info!("sending message to actor");
-        assert!(actor.m_ref.try_send(NonClone).is_ok());
+        assert!(actor.actor_ref.try_send(NonClone).is_ok());
 
         let _ = tk
             .test_next_effect(async |effect| {
@@ -364,10 +364,10 @@ mod tests {
         });
 
         tracing::info!("sending 1 to actor");
-        let _ = actor.m_ref.try_send(1);
+        let _ = actor.actor_ref.try_send(1);
 
         tracing::info!("sending 2 to actor");
-        let _ = actor.m_ref.try_send(2);
+        let _ = actor.actor_ref.try_send(2);
 
         let _ = tk
             .test_next_effect(async |effect| {

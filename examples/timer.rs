@@ -34,7 +34,7 @@ async fn main() {
     let span = tracing::trace_span!("root");
     let handle = tokio::spawn(root.task.run_task().instrument(span));
 
-    // let _ = root.m_ref.try_send(1);
+    // let _ = root.actor_ref.try_send(1);
 
     handle.await.unwrap();
 }

@@ -39,7 +39,7 @@ pub mod testkit;
 /// #[tokio::main]
 /// async fn main() {
 ///     let mut root = actum(root);
-///     root.m_ref.try_send(1).unwrap();
+///     root.actor_ref.try_send(1).unwrap();
 ///     root.task.run_task().await;
 /// }
 /// ```
@@ -55,7 +55,7 @@ pub mod testkit;
 ///         println!("{}", m);
 ///         (cell, ())
 ///     });
-///     root.m_ref.try_send(1).unwrap();
+///     root.actor_ref.try_send(1).unwrap();
 ///     root.task.run_task().await;
 /// }
 /// ```
@@ -80,7 +80,7 @@ pub mod testkit;
 /// async fn main() {
 ///     let vec = vec![1, 2, 3];
 ///     let mut root = actum(|cell, me| root(cell, me, vec));
-///     root.m_ref.try_send(4).unwrap();
+///     root.actor_ref.try_send(4).unwrap();
 ///     root.task.run_task().await;
 /// }
 /// ```
@@ -97,7 +97,7 @@ where
     let guard = ActorDropGuard::new(stop_channel.0);
     let cell = ActorCell::new(stop_channel.1, m_channel.1, ());
 
-    let m_ref = ActorRef::new(m_channel.0);
-    let task = ActorTask::new(f, cell, m_ref.clone(), None);
-    ActorToSpawn::new(task, guard, m_ref)
+    let actor_ref = ActorRef::new(m_channel.0);
+    let task = ActorTask::new(f, cell, actor_ref.clone(), None);
+    ActorToSpawn::new(task, guard, actor_ref)
 }

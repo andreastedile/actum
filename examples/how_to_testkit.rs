@@ -57,7 +57,7 @@ async fn test() {
     let span = tracing::trace_span!("parent");
     let handle = tokio::spawn(parent.task.run_task().instrument(span));
 
-    parent.m_ref.try_send(1).unwrap();
+    parent.actor_ref.try_send(1).unwrap();
 
     let _ = parent_testkit
         .test_next_effect(async |effect| {
@@ -113,7 +113,7 @@ async fn main() {
     let span = tracing::trace_span!("parent");
     let handle = tokio::spawn(parent.task.run_task().instrument(span));
 
-    parent.m_ref.try_send(1).unwrap();
+    parent.actor_ref.try_send(1).unwrap();
 
     handle.await.unwrap();
 }

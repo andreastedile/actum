@@ -21,7 +21,7 @@ use crate::actor_cell::Stop;
 /// #[tokio::main]
 /// async fn main() {
 ///     let mut root = actum(root);
-///     root.m_ref.try_send(1).unwrap();
+///     root.actor_ref.try_send(1).unwrap();
 ///     drop(root.guard);
 ///     let _ = root.task.run_task().await;
 /// }

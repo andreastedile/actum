@@ -13,18 +13,18 @@ pub struct ActorTask<M, F, Fut, Ret, D> {
     ret: PhantomData<Ret>,
     fut: PhantomData<Fut>,
     cell: ActorCell<M, D>,
-    m_ref: ActorRef<M>,
+    actor_ref: ActorRef<M>,
     _parent: Option<ResolveWhenOne>,
 }
 
 impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
-    pub const fn new(f: F, cell: ActorCell<M, D>, m_ref: ActorRef<M>, parent: Option<ResolveWhenOne>) -> Self {
+    pub const fn new(f: F, cell: ActorCell<M, D>, actor_ref: ActorRef<M>, parent: Option<ResolveWhenOne>) -> Self {
         Self {
             f,
             ret: PhantomData,
             fut: PhantomData,
             cell,
-            m_ref,
+            actor_ref,
             _parent: parent,
         }
     }
@@ -40,7 +40,7 @@ where
 {
     async fn run_task(self) -> Ret {
         let f = self.f;
-        let fut = f(self.cell, self.m_ref);
+        let fut = f(self.cell, self.actor_ref);
         let (mut cell, ret) = fut.await;
 
         if let Some(subtree) = cell.subtree.take() {
