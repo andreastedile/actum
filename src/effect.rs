@@ -1,11 +1,10 @@
 use crate::prelude::Recv;
-use crate::testkit::AnyTestkit;
-use either::Either;
+use crate::testkit::{AnyTestkit, Testkit};
 use std::fmt::{Debug, Formatter};
 
 pub enum Effect<'a, M> {
     Recv(RecvEffect<'a, M>),
-    Spawn(SpawnEffect<'a, M>),
+    Spawn(SpawnEffect),
 }
 
 impl<M> Debug for Effect<'_, M> {
@@ -25,7 +24,7 @@ impl<'a, M> Effect<'a, M> {
         }
     }
 
-    pub fn unwrap_spawn(self) -> SpawnEffect<'a, M> {
+    pub fn unwrap_spawn(self) -> SpawnEffect {
         match self {
             Effect::Spawn(inner) => inner,
             other => panic!("called `Effect::unwrap_spawn()` on a `{:?}` value", other),
@@ -58,23 +57,19 @@ impl<M> RecvEffect<'_, M> {
     }
 }
 
-pub struct SpawnEffect<'a, M> {
-    pub testkit_or_message: Either<AnyTestkit, Option<&'a M>>,
+pub struct SpawnEffect {
+    pub testkit: AnyTestkit,
 }
 
-impl<M> Debug for SpawnEffect<'_, M> {
+impl Debug for SpawnEffect {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.testkit_or_message {
-            Either::Left(_) => f.write_str("AnyTestkit"),
-            Either::Right(None) => f.write_str("Stopped(None)"),
-            Either::Right(Some(_)) => f.write_str("Stopped(Some(..))"),
-        }
+        f.write_str("Testkit")
     }
 }
 
 pub enum EffectFromActorToTestkit<M> {
     Recv(RecvEffectFromActorToTestkit<M>),
-    Spawn(SpawnEffectFromActorToTestkit<M>),
+    Spawn(SpawnEffectFromActorToTestkit),
 }
 
 impl<M> Debug for EffectFromActorToTestkit<M> {
@@ -94,14 +89,20 @@ impl<M> Debug for RecvEffectFromActorToTestkit<M> {
     }
 }
 
-pub struct SpawnEffectFromActorToTestkit<M>(pub Either<Option<AnyTestkit>, Option<M>>);
+pub struct SpawnEffectFromActorToTestkit(pub Option<AnyTestkit>);
 
-impl<M> Debug for SpawnEffectFromActorToTestkit<M> {
+impl Debug for SpawnEffectFromActorToTestkit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Either::Left(_) => f.write_str("AnyTestkit"),
-            Either::Right(_) => f.write_str("Message"),
-        }
+        f.write_str("SpawnEffect")
+    }
+}
+
+impl SpawnEffectFromActorToTestkit {
+    pub fn new<M>(testkit: Testkit<M>) -> Self
+    where
+        M: Send + 'static,
+    {
+        Self(Some(testkit.into()))
     }
 }
 
@@ -112,17 +113,17 @@ pub struct RecvEffectFromTestkitToActor<M> {
 
 impl<M> Debug for RecvEffectFromTestkitToActor<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.recv.fmt(f)
+        f.debug_struct("RecvEffect")
+            .field("recv", &self.recv)
+            .field("discarded", &self.discarded)
+            .finish()
     }
 }
 
-pub struct SpawnEffectFromTestkitToActor<M>(pub Either<(), Option<M>>);
+pub struct SpawnEffectFromTestkitToActor;
 
-impl<M> Debug for SpawnEffectFromTestkitToActor<M> {
+impl Debug for SpawnEffectFromTestkitToActor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Either::Left(_) => f.write_str(""),
-            Either::Right(_) => f.write_str("Message"),
-        }
+        f.write_str("SpawnEffect")
     }
 }

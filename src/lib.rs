@@ -1,9 +1,8 @@
-use crate::actor_cell::{ActorCell, Stop};
+use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::drop_guard::ActorDropGuard;
-use futures::channel::{mpsc, oneshot};
+use futures::channel::mpsc;
 use std::future::Future;
 
 pub mod actor;
@@ -12,7 +11,6 @@ pub mod actor_ref;
 pub mod actor_task;
 pub mod actor_to_spawn;
 pub mod children_tracker;
-pub mod drop_guard;
 pub mod effect;
 pub mod prelude;
 pub mod testkit;
@@ -91,13 +89,11 @@ where
     Fut: Future<Output = (ActorCell<M, ()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
-    let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);
 
-    let guard = ActorDropGuard::new(stop_channel.0);
-    let cell = ActorCell::new(stop_channel.1, m_channel.1, ());
+    let cell = ActorCell::new(m_channel.1, ());
 
     let actor_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, actor_ref.clone(), None);
-    ActorToSpawn::new(task, guard, actor_ref)
+    ActorToSpawn::new(task, actor_ref)
 }

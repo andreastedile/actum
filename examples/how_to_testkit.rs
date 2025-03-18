@@ -11,8 +11,7 @@ where
     let parent = me.clone();
     let child = cell
         .create_child(move |cell, me| async move { generic_child(cell, me, parent, m1).await })
-        .await
-        .unwrap_left();
+        .await;
     let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
@@ -71,8 +70,8 @@ async fn test() {
     let mut child_testkit = parent_testkit
         .test_next_effect(async |effect| {
             let effect = effect.unwrap();
-            let spawn = effect.unwrap_spawn();
-            let testkit = spawn.testkit_or_message.unwrap_left().downcast_unwrap::<u64>();
+            let mut spawn = effect.unwrap_spawn();
+            let testkit = spawn.testkit.downcast_unwrap::<u64>();
             testkit
         })
         .await;

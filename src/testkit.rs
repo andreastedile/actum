@@ -1,15 +1,14 @@
 use crate::actor_cell::test_actor::TestExtension;
-use crate::actor_cell::{ActorCell, Stop};
+use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::drop_guard::ActorDropGuard;
 
 use crate::effect::{
     Effect, EffectFromActorToTestkit, RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
     SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
 };
-use futures::channel::{mpsc, oneshot};
+use futures::channel::mpsc;
 use futures::{future, StreamExt};
 use std::any::Any;
 use std::future::Future;
@@ -75,7 +74,7 @@ use std::future::Future;
 /// where
 ///     A: Actor<u64>,
 /// {
-///     let child = cell.create_child(child).await.unwrap_left();
+///     let child = cell.create_child(child).await;
 ///     let handle = tokio::spawn(child.task.run_task());
 ///     handle.await.unwrap();
 ///     (cell, ())
@@ -106,16 +105,16 @@ use std::future::Future;
 pub struct Testkit<M> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-    spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit<M>>,
-    spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor<M>>,
+    spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
+    spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
 }
 
 impl<M> Testkit<M> {
     pub const fn new(
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-        spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit<M>>,
-        spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor<M>>,
+        spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
+        spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
     ) -> Self {
         Self {
             recv_effect_receiver,
@@ -139,7 +138,7 @@ impl<M> Testkit<M> {
             future::Either::Left((Some(inner), _)) => Some(EffectFromActorToTestkit::Recv(inner)),
             future::Either::Right((Some(inner), _)) => Some(EffectFromActorToTestkit::Spawn(inner)),
             future::Either::Left((None, _)) => {
-                // The actor has returned -> TestBounds has been dropped at the end of the ActorTask::run_task scope
+                // The actor has returned -> TestExtension has been dropped at the end of the ActorTask::run_task scope
                 // -> the channel is closed.
                 assert!(self.recv_effect_sender.is_closed());
                 None
@@ -162,21 +161,10 @@ impl<M> Testkit<M> {
                 Some(Effect::Recv(effect))
             }
             Some(EffectFromActorToTestkit::Spawn(inner)) => {
-                //
-                match &mut inner.0 {
-                    either::Either::Left(testkit) => {
-                        let effect = SpawnEffect {
-                            testkit_or_message: either::Either::Left(testkit.take().unwrap()),
-                        };
-                        Some(Effect::Spawn(effect))
-                    }
-                    either::Either::Right(recv) => {
-                        let effect = SpawnEffect {
-                            testkit_or_message: either::Either::Right(recv.as_ref()),
-                        };
-                        Some(Effect::Spawn(effect))
-                    }
-                }
+                let effect = SpawnEffect {
+                    testkit: inner.0.take().unwrap(),
+                };
+                Some(Effect::Spawn(effect))
             }
         };
 
@@ -193,21 +181,13 @@ impl<M> Testkit<M> {
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-            Some(EffectFromActorToTestkit::Spawn(inner)) => match inner.0 {
-                either::Either::Left(testkit) => {
-                    assert!(testkit.is_none(), "testkit is previously unwrapped");
-                    let effect_to_actor = SpawnEffectFromTestkitToActor(either::Either::Left(()));
-                    self.spawn_effect_sender
-                        .try_send(effect_to_actor)
-                        .expect("could not send effect back to actor");
-                }
-                either::Either::Right(recv) => {
-                    let effect_to_actor = SpawnEffectFromTestkitToActor(either::Either::Right(recv));
-                    self.spawn_effect_sender
-                        .try_send(effect_to_actor)
-                        .expect("could not send effect back to actor");
-                }
-            },
+            Some(EffectFromActorToTestkit::Spawn(inner)) => {
+                assert!(inner.0.is_none(), "testkit is previously unwrapped");
+                let effect_to_actor = SpawnEffectFromTestkitToActor;
+                self.spawn_effect_sender
+                    .try_send(effect_to_actor)
+                    .expect("could not send effect back to actor");
+            }
         };
 
         t
@@ -253,21 +233,19 @@ where
     Fut: Future<Output = (ActorCell<M, TestExtension<M>>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
-    let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);
 
-    let guard = ActorDropGuard::new(stop_channel.0);
     let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
-    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit<M>>(1);
-    let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor<M>>(1);
-    let bounds = TestExtension::new(
+    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
+    let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
+    let extension = TestExtension::new(
         recv_effect_actor_to_testkit_channel.0,
         recv_effect_testkit_to_actor_channel.1,
         spawn_effect_actor_to_testkit_channel.0,
         spawn_effect_testkit_to_actor_channel.1,
     );
-    let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
+    let cell = ActorCell::new(m_channel.1, extension);
 
     let actor_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, actor_ref.clone(), None);
@@ -278,7 +256,7 @@ where
         spawn_effect_testkit_to_actor_channel.0,
     );
 
-    (ActorToSpawn::new(task, guard, actor_ref), testkit)
+    (ActorToSpawn::new(task, actor_ref), testkit)
 }
 
 #[cfg(test)]

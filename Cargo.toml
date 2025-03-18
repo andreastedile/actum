@@ -12,7 +12,6 @@ categories = ["concurrency"]
 [dependencies]
 futures = "0.3.30"
 tracing = { version = "0.1.40", default-features = false }
-either = "1.13.0"
 
 [dev-dependencies]
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
