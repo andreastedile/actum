@@ -1,8 +1,8 @@
 use crate::actor::Actor;
-use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::standard_actor::StandardBounds;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
+use crate::actor_task::ActorTask;
 use crate::drop_guard::ActorDropGuard;
 use futures::channel::{mpsc, oneshot};
 use std::future::Future;
@@ -11,6 +11,7 @@ pub mod actor;
 pub mod actor_bounds;
 pub mod actor_cell;
 pub mod actor_ref;
+pub mod actor_task;
 pub mod drop_guard;
 pub mod effect;
 pub mod prelude;

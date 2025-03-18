@@ -1,6 +1,6 @@
 use crate::actor::Actor;
 use crate::actor_bounds::{ActorBounds, Recv};
-use crate::actor_cell::actor_task::ActorTask;
+use crate::actor_task::ActorTask;
 use crate::actor_cell::ActorCell;
 use crate::actor_cell::Stop;
 use crate::actor_ref::ActorRef;

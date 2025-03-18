@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::actor_cell::actor_task::RunTask;
+use crate::actor_task::RunTask;
 use crate::actor_ref::ActorRef;
 use either::Either;
 use std::fmt::{Debug, Formatter};

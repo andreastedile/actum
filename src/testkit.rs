@@ -1,8 +1,8 @@
 use crate::actor::Actor;
-use crate::actor_cell::actor_task::ActorTask;
 use crate::actor_cell::test_actor::TestBounds;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
+use crate::actor_task::ActorTask;
 use crate::drop_guard::ActorDropGuard;
 
 use crate::effect::{

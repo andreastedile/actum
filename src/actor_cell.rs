@@ -1,14 +1,13 @@
 use crate::resolve_when_one::ResolveWhenOne;
 use futures::channel::{mpsc, oneshot};
 
-pub mod actor_task;
 pub mod standard_actor;
 pub mod test_actor;
 
 pub struct ActorCell<M, AB> {
     stop_receiver: oneshot::Receiver<Stop>,
     m_receiver: mpsc::Receiver<M>,
-    subtree: Option<ResolveWhenOne>,
+    pub(crate) subtree: Option<ResolveWhenOne>,
     bounds: AB,
 }
 
