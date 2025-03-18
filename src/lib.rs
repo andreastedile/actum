@@ -1,5 +1,4 @@
 use crate::actor::Actor;
-use crate::actor_cell::standard_actor::StandardBounds;
 use crate::actor_cell::{ActorCell, Stop};
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
@@ -85,19 +84,18 @@ pub mod testkit;
 ///     root.task.run_task().await;
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> Actor<M, ActorTask<M, F, Fut, Ret, StandardBounds>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> Actor<M, ActorTask<M, F, Fut, Ret, ()>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<M, StandardBounds>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<M, StandardBounds>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<M, ()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let stop_channel = oneshot::channel::<Stop>();
     let m_channel = mpsc::channel::<M>(100);
 
     let guard = ActorDropGuard::new(stop_channel.0);
-    let bounds = StandardBounds;
-    let cell = ActorCell::new(stop_channel.1, m_channel.1, bounds);
+    let cell = ActorCell::new(stop_channel.1, m_channel.1, ());
 
     let m_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, m_ref.clone(), None);
