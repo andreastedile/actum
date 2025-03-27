@@ -1,6 +1,6 @@
 use crate::actor_cell::test_actor::TestExtension;
 use crate::actor_cell::ActorCell;
-use crate::actor_ref::ActorRef;
+use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 
@@ -362,13 +362,11 @@ where
     Fut: Future<Output = (ActorCell<TestExtension<M>>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
-    let m_channel = mpsc::channel::<M>(100);
+    let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
     let (extension, testkit) = create_testkit_pair::<M>();
 
     let cell = ActorCell::<TestExtension<M>>::new(extension);
-    let receiver = MessageReceiver::<M>::new(m_channel.1);
-    let actor_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
     (ActorToSpawn::new(task, actor_ref), testkit)

@@ -51,3 +51,13 @@ impl<M> MessageReceiver<M> {
         })
     }
 }
+
+pub fn create_actor_ref_and_message_receiver<M>() -> (ActorRef<M>, MessageReceiver<M>)
+where
+    M: Send + 'static,
+{
+    let (m_sender, m_receiver) = mpsc::channel::<M>(100);
+    let actor_ref = ActorRef::<M>::new(m_sender);
+    let receiver = MessageReceiver::<M>::new(m_receiver);
+    (actor_ref, receiver)
+}

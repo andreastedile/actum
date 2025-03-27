@@ -1,9 +1,8 @@
 use crate::actor_cell::ActorCell;
-use crate::actor_ref::ActorRef;
+use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use actor_ref::MessageReceiver;
-use futures::channel::mpsc;
 use std::future::Future;
 
 pub mod actor;
@@ -91,9 +90,7 @@ where
     Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
-    let m_channel = mpsc::channel::<M>(100);
-    let receiver = MessageReceiver::<M>::new(m_channel.1);
-    let actor_ref = ActorRef::<M>::new(m_channel.0);
+    let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
     let cell = ActorCell::<()>::new(());
 

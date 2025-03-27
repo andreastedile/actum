@@ -1,7 +1,7 @@
 use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
-use crate::actor_ref::ActorRef;
 use crate::actor_ref::MessageReceiver;
+use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
@@ -174,10 +174,7 @@ where
     {
         assert!(!self.dependency.spawn_effect_sender.is_closed());
 
-        let m2_channel = mpsc::channel::<M2>(100);
-        let receiver = MessageReceiver::<M2>::new(m2_channel.1);
-        let actor_ref = ActorRef::<M2>::new(m2_channel.0);
-
+        let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
         let (extension, testkit) = create_testkit_pair::<M2>();
 
         let cell = ActorCell::new(extension);
