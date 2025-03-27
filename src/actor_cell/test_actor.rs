@@ -1,11 +1,11 @@
 use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
+use crate::actor_ref::MessageReceiver;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::spawn_effect::{SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
-use crate::message_receiver::MessageReceiver;
 use crate::testkit::create_testkit_pair;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};

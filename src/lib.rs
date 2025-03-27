@@ -2,7 +2,7 @@ use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::message_receiver::MessageReceiver;
+use actor_ref::MessageReceiver;
 use futures::channel::mpsc;
 use std::future::Future;
 
@@ -13,7 +13,6 @@ pub mod actor_task;
 pub mod actor_to_spawn;
 pub mod children_tracker;
 pub mod effect;
-mod message_receiver;
 pub mod prelude;
 pub mod testkit;
 

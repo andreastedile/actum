@@ -4,10 +4,10 @@ use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 
+use crate::actor_ref::MessageReceiver;
 use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
 use crate::effect::Effect;
-use crate::message_receiver::MessageReceiver;
 use either::Either;
 use futures::channel::mpsc;
 use futures::{future, StreamExt};

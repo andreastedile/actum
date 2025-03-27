@@ -1,7 +1,7 @@
 use crate::actor_ref::ActorRef;
+use crate::actor_ref::MessageReceiver;
 use crate::actor_task::RunTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::message_receiver::MessageReceiver;
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;

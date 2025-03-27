@@ -1,9 +1,9 @@
 use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
+use crate::actor_ref::MessageReceiver;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 use std::future::Future;
 
