@@ -1,6 +1,6 @@
 use crate::children_tracker::ChildrenTracker;
 
-pub mod standard_actor;
+pub mod actor;
 pub mod test_actor;
 
 pub struct ActorCell<D> {
@@ -16,5 +16,3 @@ impl<D> ActorCell<D> {
         }
     }
 }
-
-pub struct Stop;
