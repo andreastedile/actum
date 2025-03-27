@@ -36,95 +36,6 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
     (extension, testkit)
 }
 
-/// Receive and test actor [effects](EffectFromActorToTestkit).
-///
-/// # Examples
-///
-/// Test whether the actor called [recv](crate::actor::Actor::recv).
-///
-/// ```
-/// use actum::prelude::*;
-/// use actum::testkit::actum_with_testkit;
-///
-/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
-/// where
-///     A: Actor<u64>,
-/// {
-///     let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
-///     me.try_send(m1 * 2).unwrap();
-///
-///     let m2 = cell.recv(&mut receiver).await.into_message().unwrap();
-///     assert_eq!(m2, m1 * 2);
-///
-///     (cell, ())
-/// }
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let (mut root, mut testkit) = actum_with_testkit(root);
-///     let handle = tokio::spawn(root.task.run_task());
-///
-///     root.actor_ref.try_send(42).unwrap();
-///
-///     let _ = testkit
-///         .test_next_effect(async |effect| {
-///             let effect = effect.unwrap();
-///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
-///             assert_eq!(*m, 42);
-///         })
-///         .await;
-///
-///     let _ = testkit
-///         .test_next_effect(async |effect| {
-///             let effect = effect.unwrap();
-///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
-///             assert_eq!(*m, 84);
-///         })
-///         .await;
-///
-///     handle.await.unwrap();
-/// }
-/// ```
-///
-/// Test whether the actor called [spawn](crate::actor::Actor::create_child).
-///
-/// # Example
-/// ```
-/// use actum::prelude::*;
-/// use actum::testkit::actum_with_testkit;
-///
-/// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
-/// where
-///     A: Actor<u64>,
-/// {
-///     let child = cell.create_child(child).await;
-///     let handle = tokio::spawn(child.task.run_task());
-///     handle.await.unwrap();
-///     (cell, ())
-/// }
-///
-/// async fn child<A>(mut cell: A, _receiver: MessageReceiver<u32>, _me: ActorRef<u32>) -> (A, ())
-/// where
-///     A: Actor<u32>,
-/// {
-///     println!("child");
-///     (cell, ())
-/// }
-///
-/// #[tokio::test]
-/// async fn test() {
-///     let (parent, mut parent_testkit) = actum_with_testkit(parent);
-///     let handle = tokio::spawn(parent.task.run_task());
-///
-///     let (_parent_testkit, _child_testkit) = parent_testkit.test_next_effect(|effect| {
-///         effect.unwrap_spawn().testkit_or_message.downcast_unwrap::<u32>()
-///     });
-///
-///     // Use the child testkit...
-///
-///     handle.await.unwrap();
-/// }
-/// ```
 pub struct Testkit<M> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
@@ -199,6 +110,177 @@ impl<M> Testkit<M> {
         };
 
         t
+    }
+
+    /// Receives a [RecvEffect] from the actor under test and evaluates it with the provided closure.
+    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
+    ///
+    /// The closure can return a generic object.
+    ///
+    /// # Panics
+    /// If the received effect is not the right type.
+    ///
+    /// # Example
+    /// ```
+    /// use actum::prelude::*;
+    /// use actum::testkit::actum_with_testkit;
+    ///
+    /// async fn first<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
+    /// where
+    ///     A: Actor<u64>,
+    /// {
+    ///     let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
+    ///     me.try_send(m1 * 2).unwrap();
+    ///     let m2 = cell.recv(&mut receiver).await.into_message().unwrap();
+    ///     (cell, ())
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (mut first, mut testkit) = actum_with_testkit(first);
+    ///     let handle = tokio::spawn(first.task.run_task());
+    ///
+    ///     first.actor_ref.try_send(1).unwrap();
+    ///
+    ///     let _ = testkit
+    ///         .test_next_effect(async |effect| {
+    ///             let effect = effect.unwrap();
+    ///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
+    ///             assert_eq!(*m, 1);
+    ///         })
+    ///         .await;
+    ///
+    ///     let _ = testkit
+    ///         .test_next_effect(async |effect| {
+    ///             let effect = effect.unwrap();
+    ///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
+    ///             assert_eq!(*m, 2);
+    ///         })
+    ///         .await;
+    ///
+    ///     handle.await.unwrap();
+    /// }
+    /// ```
+    #[must_use]
+    pub async fn expect_recv_effect<T>(&mut self, handler: impl AsyncFnOnce(RecvEffect<M>) -> T) -> T
+    where
+        M: Send + 'static,
+    {
+        let effect_from_actor = self.recv_next_effect().await.unwrap().unwrap_left();
+
+        let mut discarded = false;
+        let effect = RecvEffect {
+            recv: effect_from_actor.recv.as_ref(),
+            discarded: &mut discarded,
+        };
+
+        let t = handler(effect).await;
+
+        let effect_to_actor = RecvEffectFromTestkitToActor {
+            recv: effect_from_actor.recv,
+            discarded,
+        };
+        self.recv_effect_sender
+            .try_send(effect_to_actor)
+            .expect("could not send effect back to actor");
+
+        t
+    }
+
+    /// Receives a [SpawnEffect] from the actor under test and evaluates it with the provided closure.
+    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
+    ///
+    /// The closure can return a generic object, such as the [Testkit] of the child actor.
+    ///
+    /// # Panics
+    /// If the received effect is not the right type.
+    ///
+    /// # Examples
+    /// Test whether the actor called [spawn](crate::actor::Actor::create_child).
+    ///
+    /// # Example
+    /// ```
+    /// use actum::prelude::*;
+    /// use actum::testkit::actum_with_testkit;
+    ///
+    /// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
+    /// where
+    ///     A: Actor<u64>,
+    /// {
+    ///     println!("got here");
+    ///     let child = cell.create_child(child).await;
+    ///     tracing::trace!("there");
+    ///     let handle = tokio::spawn(child.task.run_task());
+    ///     handle.await.unwrap();
+    ///     (cell, ())
+    /// }
+    ///
+    /// async fn child<A>(mut cell: A, _receiver: MessageReceiver<u32>, _me: ActorRef<u32>) -> (A, ())
+    /// where
+    ///     A: Actor<u32>,
+    /// {
+    ///     (cell, ())
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (parent, mut parent_tk) = actum_with_testkit(parent);
+    ///     let handle = tokio::spawn(parent.task.run_task());
+    ///     
+    ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
+    ///         let testkit = effect.any_testkit.downcast_unwrap::<u32>();
+    ///         testkit
+    ///     }).await;
+    ///
+    ///     child_tk.expect_returned().await;
+    ///
+    ///     handle.await.unwrap();
+    /// }
+    /// ```
+    #[must_use]
+    pub async fn expect_spawn_effect<T>(&mut self, handler: impl AsyncFnOnce(SpawnEffect) -> T) -> T
+    where
+        M: Send + 'static,
+    {
+        let mut effect_from_actor = self.recv_next_effect().await.unwrap().unwrap_right();
+
+        let effect = SpawnEffect {
+            any_testkit: effect_from_actor.any_testkit.take().unwrap(),
+        };
+
+        let t = handler(effect).await;
+
+        assert!(
+            effect_from_actor.any_testkit.is_none(),
+            "testkit is previously unwrapped"
+        );
+        let effect_to_actor = SpawnEffectFromTestkitToActor;
+        self.spawn_effect_sender
+            .try_send(effect_to_actor)
+            .expect("could not send effect back to actor");
+
+        t
+    }
+
+    /// Checks that the actor has returned.
+    /// If this is the case, subsequent calls are guaranteed to succeed.
+    ///
+    /// # Panics
+    /// If the actor has not returned yet.
+    pub async fn expect_returned(&mut self)
+    where
+        M: Send + 'static,
+    {
+        let effect_from_actor = self.recv_next_effect().await;
+        match effect_from_actor {
+            None => {}
+            Some(Either::Left(effect)) => {
+                panic!("expected `None`, got an `Either::Left` value: {:?}", effect);
+            }
+            Some(Either::Right(effect)) => {
+                panic!("expected `None`, got an `Either::Right` value: {:?}", effect);
+            }
+        }
     }
 
     async fn recv_next_effect(
