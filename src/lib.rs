@@ -20,7 +20,7 @@ pub mod testkit;
 /// Creates the root actor of the actor tree hierarchy.
 /// The actor should then be spawned onto the runtime of choice.
 ///
-/// Compared to using the [testkit](testkit::testkit) function, this function does not incur any overhead.
+/// Compared to using the [testkit](testkit::actum_with_testkit) function, this function does not incur any overhead.
 ///
 /// # Examples
 ///

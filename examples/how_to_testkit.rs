@@ -47,7 +47,7 @@ where
 
 #[tokio::test]
 async fn test() {
-    use actum::testkit::testkit;
+    use actum::testkit::actum_with_testkit;
 
     tracing_subscriber::fmt()
         .with_span_events(
@@ -58,7 +58,7 @@ async fn test() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let (mut parent, mut parent_testkit) = testkit(generic_parent);
+    let (mut parent, mut parent_testkit) = actum_with_testkit(generic_parent);
     let span = tracing::trace_span!("parent");
     let handle = tokio::spawn(parent.task.run_task().instrument(span));
 

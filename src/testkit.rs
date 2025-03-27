@@ -43,7 +43,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 ///
 /// ```
 /// use actum::prelude::*;
-/// use actum::testkit::testkit;
+/// use actum::testkit::actum_with_testkit;
 ///
 /// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
 /// where
@@ -60,7 +60,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (mut root, mut testkit) = testkit(root);
+///     let (mut root, mut testkit) = actum_with_testkit(root);
 ///     let handle = tokio::spawn(root.task.run_task());
 ///
 ///     root.actor_ref.try_send(42).unwrap();
@@ -90,7 +90,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 /// # Example
 /// ```
 /// use actum::prelude::*;
-/// use actum::testkit::testkit;
+/// use actum::testkit::actum_with_testkit;
 ///
 /// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
 /// where
@@ -112,7 +112,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 ///
 /// #[tokio::test]
 /// async fn test() {
-///     let (parent, mut parent_testkit) = testkit(parent);
+///     let (parent, mut parent_testkit) = actum_with_testkit(parent);
 ///     let handle = tokio::spawn(parent.task.run_task());
 ///
 ///     let (_parent_testkit, _child_testkit) = parent_testkit.test_next_effect(|effect| {
@@ -258,7 +258,9 @@ impl AnyTestkit {
     }
 }
 
-pub fn testkit<M, F, Fut, Ret>(f: F) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>, Testkit<M>)
+pub fn actum_with_testkit<M, F, Fut, Ret>(
+    f: F,
+) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>, Testkit<M>)
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<TestExtension<M>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -280,7 +282,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use crate::testkit::testkit;
+    use crate::testkit::actum_with_testkit;
     use std::time::Duration;
     use tokio::runtime::Handle;
     use tokio::time::timeout;
@@ -296,7 +298,7 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
+        let (mut actor, mut tk) = actum_with_testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
             tracing::info!("calling recv with timeout");
             let result = timeout(Duration::from_millis(500), cell.recv(&mut receiver)).await;
             assert!(result.is_err());
@@ -346,7 +348,7 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
+        let (mut actor, mut tk) = actum_with_testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
             tracing::info!("calling recv");
             let m = cell.recv(&mut receiver).await.into_message().unwrap();
             assert_eq!(m, 2);
