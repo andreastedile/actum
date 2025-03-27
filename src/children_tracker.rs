@@ -1,6 +1,5 @@
 use futures::task::AtomicWaker;
-use futures::FutureExt;
-use std::future::{poll_fn, Future};
+use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -24,8 +23,8 @@ impl ChildrenTracker {
         }
     }
 
-    pub fn join_all(mut self) -> impl Future<Output = ()> + Send + 'static {
-        poll_fn(move |cx| self.poll_unpin(cx))
+    pub fn join_all(self) -> impl Future<Output = ()> + Send + 'static {
+        self.into_future()
     }
 }
 
