@@ -3,10 +3,8 @@ use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use crate::effect::{
-    RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, SpawnEffectFromActorToTestkit,
-    SpawnEffectFromTestkitToActor,
-};
+use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::effect::spawn_effect::{SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
 use crate::message_receiver::MessageReceiver;
 use crate::testkit::create_testkit_pair;
 use futures::channel::mpsc;
@@ -121,7 +119,7 @@ where
                     RecvFutureStateMachine::S0 => {
                         let recv = ready!(receiver.recv().poll_unpin(cx));
 
-                        let effect_out = RecvEffectFromActorToTestkit(recv);
+                        let effect_out = RecvEffectFromActorToTestkit { recv };
 
                         self.dependency
                             .recv_effect_sender
@@ -150,7 +148,7 @@ where
                             Poll::Pending => return Poll::Pending,
                         };
 
-                        let effect_out = RecvEffectFromActorToTestkit(effect_in.recv);
+                        let effect_out = RecvEffectFromActorToTestkit { recv: effect_in.recv };
 
                         self.dependency
                             .recv_effect_sender
@@ -187,7 +185,9 @@ where
         let tracker = self.tracker.get_or_insert_default();
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
 
-        let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit(Some(testkit.into()));
+        let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit {
+            any_testkit: Some(testkit.into()),
+        };
 
         self.dependency
             .spawn_effect_sender

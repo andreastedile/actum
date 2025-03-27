@@ -4,14 +4,14 @@ use crate::actor_ref::ActorRef;
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 
-use crate::effect::{
-    Effect, EffectFromActorToTestkit, RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor,
-    SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor,
-};
+use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
+use crate::effect::{Effect, EffectFromActorToTestkit};
 use crate::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 use futures::{future, StreamExt};
 use std::any::Any;
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
 pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
@@ -157,8 +157,8 @@ impl<M> Testkit<M> {
         let select = future::select(self.recv_effect_receiver.next(), self.spawn_effect_receiver.next()).await;
 
         let mut effect_from_actor = match select {
-            future::Either::Left((Some(inner), _)) => Some(EffectFromActorToTestkit::Recv(inner)),
-            future::Either::Right((Some(inner), _)) => Some(EffectFromActorToTestkit::Spawn(inner)),
+            future::Either::Left((Some(effect), _)) => Some(EffectFromActorToTestkit::Recv(effect)),
+            future::Either::Right((Some(effect), _)) => Some(EffectFromActorToTestkit::Spawn(effect)),
             future::Either::Left((None, _)) => {
                 // The actor has returned -> TestExtension has been dropped at the end of the ActorTask::run_task scope
                 // -> the channel is closed.
@@ -175,16 +175,16 @@ impl<M> Testkit<M> {
         let mut discarded = false;
         let effect = match &mut effect_from_actor {
             None => None,
-            Some(EffectFromActorToTestkit::Recv(inner)) => {
+            Some(EffectFromActorToTestkit::Recv(effect)) => {
                 let effect = RecvEffect {
-                    recv: inner.0.as_ref(),
+                    recv: effect.recv.as_ref(),
                     discarded: &mut discarded,
                 };
                 Some(Effect::Recv(effect))
             }
-            Some(EffectFromActorToTestkit::Spawn(inner)) => {
+            Some(EffectFromActorToTestkit::Spawn(effect)) => {
                 let effect = SpawnEffect {
-                    testkit: inner.0.take().unwrap(),
+                    any_testkit: effect.any_testkit.take().unwrap(),
                 };
                 Some(Effect::Spawn(effect))
             }
@@ -194,17 +194,17 @@ impl<M> Testkit<M> {
 
         match effect_from_actor {
             None => {}
-            Some(EffectFromActorToTestkit::Recv(inner)) => {
+            Some(EffectFromActorToTestkit::Recv(effect)) => {
                 let effect_to_actor = RecvEffectFromTestkitToActor {
-                    recv: inner.0,
+                    recv: effect.recv,
                     discarded,
                 };
                 self.recv_effect_sender
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-            Some(EffectFromActorToTestkit::Spawn(inner)) => {
-                assert!(inner.0.is_none(), "testkit is previously unwrapped");
+            Some(EffectFromActorToTestkit::Spawn(effect)) => {
+                assert!(effect.any_testkit.is_none(), "testkit is previously unwrapped");
                 let effect_to_actor = SpawnEffectFromTestkitToActor;
                 self.spawn_effect_sender
                     .try_send(effect_to_actor)
@@ -218,6 +218,16 @@ impl<M> Testkit<M> {
 
 /// A boxed [Testkit] which can be [downcast](AnyTestkit::downcast).
 pub struct AnyTestkit(Option<Box<dyn Any + Send>>);
+
+impl Debug for AnyTestkit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_none() {
+            f.write_str("AnyTestkit(None)")
+        } else {
+            f.write_str("AnyTestkit(Some(..))")
+        }
+    }
+}
 
 impl<M> From<Testkit<M>> for AnyTestkit
 where
