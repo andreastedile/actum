@@ -20,10 +20,7 @@ impl<M> PartialEq<Self> for ActorRef<M> {
 
 impl<M> Eq for ActorRef<M> {}
 
-impl<M> ActorRef<M>
-where
-    M: Send + 'static,
-{
+impl<M> ActorRef<M> {
     pub const fn new(m_sender: mpsc::Sender<M>) -> Self {
         Self(m_sender)
     }
@@ -52,10 +49,7 @@ impl<M> MessageReceiver<M> {
     }
 }
 
-pub fn create_actor_ref_and_message_receiver<M>() -> (ActorRef<M>, MessageReceiver<M>)
-where
-    M: Send + 'static,
-{
+pub fn create_actor_ref_and_message_receiver<M>() -> (ActorRef<M>, MessageReceiver<M>) {
     let (m_sender, m_receiver) = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::<M>::new(m_sender);
     let receiver = MessageReceiver::<M>::new(m_receiver);
