@@ -146,9 +146,10 @@ impl<M> Testkit<M> {
         }
     }
 
-    /// Receive an effect from the actor and test it.
-    /// If the actor has returned, then there will be no more effects to test and None is returned.
-    /// Otherwise, the testkit is returned.
+    /// Receives an effect from the actor under test and evaluates it with the provided closure.
+    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
+    ///
+    /// The closure can return a generic object, such as the [Testkit] of a child actor.
     #[must_use]
     pub async fn test_next_effect<T>(&mut self, handler: impl AsyncFnOnce(Option<Effect<M>>) -> T) -> T
     where
