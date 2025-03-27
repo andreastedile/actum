@@ -17,9 +17,10 @@ mod message_receiver;
 pub mod prelude;
 pub mod testkit;
 
-/// Define the root actor of the actor tree hierarchy.
+/// Creates the root actor of the actor tree hierarchy.
+/// The actor should then be spawned onto the runtime of choice.
 ///
-/// Compared to using the [testkit](testkit::testkit) function, this function does not incur in any overhead.
+/// Compared to using the [testkit](testkit::testkit) function, this function does not incur any overhead.
 ///
 /// # Examples
 ///

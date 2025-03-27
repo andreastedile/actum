@@ -25,6 +25,11 @@ where
     /// Asynchronously receive the next message.
     fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a;
 
+    /// Creates a child actor.
+    /// The actor should then be spawned onto the runtime of choice.
+    ///
+    /// See the [actum](crate::actum) function for passing a function pointer, passing a closure and
+    /// for passing arguments to the actor.
     fn create_child<M2, F, Fut, Ret>(
         &mut self,
         f: F,
