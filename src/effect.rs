@@ -1,7 +1,9 @@
 use crate::prelude::Recv;
 use crate::testkit::{AnyTestkit, Testkit};
+use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
+#[derive(EnumAsInner)]
 pub enum Effect<'a, M> {
     Recv(RecvEffect<'a, M>),
     Spawn(SpawnEffect),
@@ -13,30 +15,6 @@ impl<M> Debug for Effect<'_, M> {
             Effect::Recv(inner) => inner.fmt(f),
             Effect::Spawn(inner) => inner.fmt(f),
         }
-    }
-}
-
-impl<'a, M> Effect<'a, M> {
-    pub fn unwrap_recv(self) -> RecvEffect<'a, M> {
-        match self {
-            Effect::Recv(inner) => inner,
-            other => panic!("called `Effect::unwrap_recv()` on a `{:?}` value", other),
-        }
-    }
-
-    pub fn unwrap_spawn(self) -> SpawnEffect {
-        match self {
-            Effect::Spawn(inner) => inner,
-            other => panic!("called `Effect::unwrap_spawn()` on a `{:?}` value", other),
-        }
-    }
-
-    pub const fn is_recv(&self) -> bool {
-        matches!(self, Self::Recv(_))
-    }
-
-    pub const fn is_spawn(&self) -> bool {
-        matches!(self, Self::Spawn(_))
     }
 }
 

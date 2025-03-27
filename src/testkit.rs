@@ -49,11 +49,11 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 /// where
 ///     A: Actor<u64>,
 /// {
-///     let m1 = cell.recv(&mut receiver).await.message().unwrap();
+///     let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
 ///     me.try_send(m1 * 2).unwrap();
 ///
-///     let m2 = cell.recv(&mut receiver).await.message().unwrap();
-///     debug_assert_eq!(m2, m1 * 2);
+///     let m2 = cell.recv(&mut receiver).await.into_message().unwrap();
+///     assert_eq!(m2, m1 * 2);
 ///
 ///     (cell, ())
 /// }
@@ -68,7 +68,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 ///     let _ = testkit
 ///         .test_next_effect(async |effect| {
 ///             let effect = effect.unwrap();
-///             let m = effect.unwrap_recv().recv.unwrap_message();
+///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
 ///             assert_eq!(*m, 42);
 ///         })
 ///         .await;
@@ -76,7 +76,7 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
 ///     let _ = testkit
 ///         .test_next_effect(async |effect| {
 ///             let effect = effect.unwrap();
-///             let m = effect.unwrap_recv().recv.unwrap_message();
+///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
 ///             assert_eq!(*m, 84);
 ///         })
 ///         .await;
@@ -293,7 +293,7 @@ mod tests {
 
             tracing::info!("timeout expired; calling recv");
             let recv = cell.recv(&mut receiver).await;
-            recv.unwrap_message();
+            recv.as_message().unwrap();
             tracing::info!("message received!");
 
             (cell, ())
@@ -311,7 +311,7 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(1000)).await;
 
                 tracing::info!("testing the effect");
-                effect.unwrap_recv().recv.unwrap_message();
+                effect.into_recv().unwrap().recv.into_message().unwrap();
             })
             .instrument(info_span!("testkit"))
             .await;
@@ -320,7 +320,7 @@ mod tests {
             .test_next_effect(async |effect| {
                 let effect = effect.unwrap();
                 tracing::info!("effect received; testing it");
-                effect.unwrap_recv().recv.unwrap_message();
+                effect.into_recv().unwrap().recv.into_message().unwrap();
             })
             .instrument(info_span!("testkit"))
             .await;
@@ -338,7 +338,7 @@ mod tests {
 
         let (mut actor, mut tk) = testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
             tracing::info!("calling recv");
-            let m = cell.recv(&mut receiver).await.unwrap_message();
+            let m = cell.recv(&mut receiver).await.into_message().unwrap();
             assert_eq!(m, 2);
             tracing::info!("message received = 2");
 
@@ -357,9 +357,9 @@ mod tests {
 
         let _ = tk
             .test_next_effect(async |effect| {
-                let effect = effect.unwrap();
-                let mut effect = effect.unwrap_recv();
-                let m = effect.recv.as_ref().unwrap_message();
+                let mut effect = effect.unwrap();
+                let effect = effect.as_recv_mut().unwrap();
+                let m = effect.recv.as_ref().into_message().unwrap();
                 assert_eq!(**m, 1);
                 tracing::info!("the first effect contains 1; discarding the effect");
                 effect.discard();
@@ -369,8 +369,8 @@ mod tests {
         let _ = tk
             .test_next_effect(async |effect| {
                 let effect = effect.unwrap();
-                let effect = effect.unwrap_recv();
-                let m = effect.recv.as_ref().unwrap_message();
+                let effect = effect.into_recv().unwrap();
+                let m = effect.recv.as_ref().into_message().unwrap();
                 tracing::info!("the second effect contains 2");
                 assert_eq!(**m, 2);
             })

@@ -2,6 +2,7 @@ use crate::actor_ref::ActorRef;
 use crate::actor_task::RunTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::message_receiver::MessageReceiver;
+use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
@@ -41,6 +42,8 @@ where
         Ret: Send + 'static;
 }
 
+/// Value returned by the [recv](Actor::recv) method.
+#[derive(EnumAsInner)]
 pub enum Recv<M> {
     /// The actor has received a message.
     Message(M),
@@ -61,38 +64,6 @@ impl<M> Debug for Recv<M> {
 }
 
 impl<M> Recv<M> {
-    pub fn message(self) -> Option<M> {
-        if let Self::Message(m) = self {
-            Some(m)
-        } else {
-            None
-        }
-    }
-
-    pub fn unwrap_message(self) -> M {
-        match self {
-            Self::Message(m) => m,
-            other => panic!("called `Recv::unwrap_message()` on a `{:?}` value", other),
-        }
-    }
-
-    pub const fn is_message(&self) -> bool {
-        matches!(self, Self::Message(_))
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    pub fn is_message_and(self, f: impl FnOnce(M) -> bool) -> bool {
-        if let Self::Message(m) = self {
-            f(m)
-        } else {
-            false
-        }
-    }
-
-    pub const fn is_no_more_senders(&self) -> bool {
-        matches!(self, Self::NoMoreSenders)
-    }
-
     pub const fn as_ref(&self) -> Recv<&M> {
         match self {
             Self::Message(message) => Recv::Message(message),

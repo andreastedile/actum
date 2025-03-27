@@ -5,7 +5,7 @@ async fn generic_parent<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: 
 where
     A: Actor<u64>,
 {
-    let m1 = cell.recv(&mut receiver).await.message().unwrap();
+    let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
     tracing::info!(recv = m1);
 
     let parent = me.clone();
@@ -15,7 +15,7 @@ where
     let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
-    let m2 = cell.recv(&mut receiver).await.message().unwrap();
+    let m2 = cell.recv(&mut receiver).await.into_message().unwrap();
     tracing::info!(recv = m2);
 
     assert_eq!(m2, m1 * 2);
@@ -36,7 +36,7 @@ where
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
 
-    let m = cell.recv(&mut receiver).await.message().unwrap();
+    let m = cell.recv(&mut receiver).await.into_message().unwrap();
     tracing::info!(recv = m);
 
     tracing::info!(try_send = m);
