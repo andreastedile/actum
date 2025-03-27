@@ -6,8 +6,9 @@ use crate::actor_to_spawn::ActorToSpawn;
 
 use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
-use crate::effect::{Effect, EffectFromActorToTestkit};
+use crate::effect::Effect;
 use crate::message_receiver::MessageReceiver;
+use either::Either;
 use futures::channel::mpsc;
 use futures::{future, StreamExt};
 use std::any::Any;
@@ -155,11 +156,62 @@ impl<M> Testkit<M> {
     where
         M: Send + 'static,
     {
+        let mut effect_from_actor = self.recv_next_effect().await;
+
+        let mut discarded = false;
+        let effect = match &mut effect_from_actor {
+            None => None,
+            Some(Either::Left(effect)) => {
+                let effect = RecvEffect {
+                    recv: effect.recv.as_ref(),
+                    discarded: &mut discarded,
+                };
+                Some(Effect::Recv(effect))
+            }
+            Some(Either::Right(effect)) => {
+                let effect = SpawnEffect {
+                    any_testkit: effect.any_testkit.take().unwrap(),
+                };
+                Some(Effect::Spawn(effect))
+            }
+        };
+
+        let t = handler(effect).await;
+
+        match effect_from_actor {
+            None => {}
+            Some(Either::Left(effect)) => {
+                let effect_to_actor = RecvEffectFromTestkitToActor {
+                    recv: effect.recv,
+                    discarded,
+                };
+                self.recv_effect_sender
+                    .try_send(effect_to_actor)
+                    .expect("could not send effect back to actor");
+            }
+            Some(Either::Right(effect)) => {
+                assert!(effect.any_testkit.is_none(), "testkit is previously unwrapped");
+                let effect_to_actor = SpawnEffectFromTestkitToActor;
+                self.spawn_effect_sender
+                    .try_send(effect_to_actor)
+                    .expect("could not send effect back to actor");
+            }
+        };
+
+        t
+    }
+
+    async fn recv_next_effect(
+        &mut self,
+    ) -> Option<Either<RecvEffectFromActorToTestkit<M>, SpawnEffectFromActorToTestkit>>
+    where
+        M: Send + 'static,
+    {
         let select = future::select(self.recv_effect_receiver.next(), self.spawn_effect_receiver.next()).await;
 
-        let mut effect_from_actor = match select {
-            future::Either::Left((Some(effect), _)) => Some(EffectFromActorToTestkit::Recv(effect)),
-            future::Either::Right((Some(effect), _)) => Some(EffectFromActorToTestkit::Spawn(effect)),
+        let effect_from_actor = match select {
+            future::Either::Left((Some(effect), _)) => Some(Either::Left(effect)),
+            future::Either::Right((Some(effect), _)) => Some(Either::Right(effect)),
             future::Either::Left((None, _)) => {
                 // The actor has returned -> TestExtension has been dropped at the end of the ActorTask::run_task scope
                 // -> the channel is closed.
@@ -173,47 +225,7 @@ impl<M> Testkit<M> {
             }
         };
 
-        let mut discarded = false;
-        let effect = match &mut effect_from_actor {
-            None => None,
-            Some(EffectFromActorToTestkit::Recv(effect)) => {
-                let effect = RecvEffect {
-                    recv: effect.recv.as_ref(),
-                    discarded: &mut discarded,
-                };
-                Some(Effect::Recv(effect))
-            }
-            Some(EffectFromActorToTestkit::Spawn(effect)) => {
-                let effect = SpawnEffect {
-                    any_testkit: effect.any_testkit.take().unwrap(),
-                };
-                Some(Effect::Spawn(effect))
-            }
-        };
-
-        let t = handler(effect).await;
-
-        match effect_from_actor {
-            None => {}
-            Some(EffectFromActorToTestkit::Recv(effect)) => {
-                let effect_to_actor = RecvEffectFromTestkitToActor {
-                    recv: effect.recv,
-                    discarded,
-                };
-                self.recv_effect_sender
-                    .try_send(effect_to_actor)
-                    .expect("could not send effect back to actor");
-            }
-            Some(EffectFromActorToTestkit::Spawn(effect)) => {
-                assert!(effect.any_testkit.is_none(), "testkit is previously unwrapped");
-                let effect_to_actor = SpawnEffectFromTestkitToActor;
-                self.spawn_effect_sender
-                    .try_send(effect_to_actor)
-                    .expect("could not send effect back to actor");
-            }
-        };
-
-        t
+        effect_from_actor
     }
 }
 
