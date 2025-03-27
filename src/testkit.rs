@@ -376,114 +376,113 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::prelude::*;
-    use crate::testkit::actum_with_testkit;
+    use futures::FutureExt;
+    use std::future::poll_fn;
+    use std::task::Poll;
     use std::time::Duration;
-    use tokio::runtime::Handle;
-    use tokio::time::timeout;
     use tracing::{info_span, Instrument};
 
+    /// Non-cloneable type.
+    /// If the actor receives it, it certainly could not have been cloned by Actum.
     struct NonClone;
 
     #[tokio::test]
-    async fn test_complex_scenario_with_slow_testkit() {
+    async fn test_slow_testkit() {
         let _ = tracing_subscriber::fmt()
             .with_target(false)
             .with_line_number(true)
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = actum_with_testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
-            tracing::info!("calling recv with timeout");
-            let result = timeout(Duration::from_millis(500), cell.recv(&mut receiver)).await;
-            assert!(result.is_err());
-
-            tracing::info!("timeout expired; calling recv");
-            let recv = cell.recv(&mut receiver).await;
-            recv.as_message().unwrap();
-            tracing::info!("message received!");
-
-            (cell, ())
-        });
-
-        let actor_handle = tokio::spawn(actor.task.run_task().instrument(info_span!("actor")));
-
-        tracing::info!("sending message to actor");
-        assert!(actor.actor_ref.try_send(NonClone).is_ok());
-
-        let _ = tk
-            .test_next_effect(async |effect| {
-                let effect = effect.unwrap();
-                tracing::info!("first effect received; sleeping");
+        let (mut root, mut root_tk) =
+            actum_with_testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
                 tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                tracing::info!("testing the effect");
-                effect.into_recv().unwrap().recv.into_message().unwrap();
-            })
-            .instrument(info_span!("testkit"))
-            .await;
+                let mut recv_future = cell.recv(&mut receiver);
+                poll_fn(|cx| match recv_future.poll_unpin(cx) {
+                    Poll::Ready(_) => panic!("the testkit should be slow"),
+                    Poll::Pending => Poll::Ready(()),
+                })
+                .await;
+                drop(recv_future);
 
-        let _ = tk
+                let _ = cell.recv(&mut receiver).await.into_message().unwrap();
+                tracing::info!("received NonClone");
+
+                (cell, ())
+            });
+
+        let root_handle = tokio::spawn(root.task.run_task().instrument(info_span!("root")));
+
+        // Immediately send the NonClone.
+        assert!(root.actor_ref.try_send(NonClone).is_ok());
+
+        let _ = root_tk
             .test_next_effect(async |effect| {
-                let effect = effect.unwrap();
-                tracing::info!("effect received; testing it");
-                effect.into_recv().unwrap().recv.into_message().unwrap();
+                let _ = effect.unwrap();
+                tracing::info!("effect received; sleeping");
+                tokio::time::sleep(Duration::from_millis(1000)).await;
             })
             .instrument(info_span!("testkit"))
             .await;
 
-        actor_handle.await.unwrap();
+        let _ = root_tk
+            .test_next_effect(async |effect| {
+                let _ = effect.unwrap();
+                tracing::info!("effect received");
+            })
+            .instrument(info_span!("testkit"))
+            .await;
+
+        root_handle.await.unwrap();
     }
 
     #[tokio::test]
-    async fn test_effect_discard() {
+    async fn test_recv_effect_discard() {
         let _ = tracing_subscriber::fmt()
             .with_target(false)
             .with_line_number(true)
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut actor, mut tk) = actum_with_testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
-            tracing::info!("calling recv");
+        let (mut root, mut root_tk) = actum_with_testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
             let m = cell.recv(&mut receiver).await.into_message().unwrap();
             assert_eq!(m, 2);
-            tracing::info!("message received = 2");
+            tracing::info!("received 2");
 
             (cell, ())
         });
 
-        let actor_handle = tokio::task::spawn_blocking(|| {
-            Handle::current().block_on(actor.task.run_task().instrument(info_span!("actor")));
-        });
+        let root_handle = tokio::spawn(root.task.run_task().instrument(info_span!("root")));
+
+        // Send two messages and discard the first. Only the second can be received.
 
         tracing::info!("sending 1 to actor");
-        let _ = actor.actor_ref.try_send(1);
+        let _ = root.actor_ref.try_send(1);
 
         tracing::info!("sending 2 to actor");
-        let _ = actor.actor_ref.try_send(2);
+        let _ = root.actor_ref.try_send(2);
 
-        let _ = tk
-            .test_next_effect(async |effect| {
-                let mut effect = effect.unwrap();
-                let effect = effect.as_recv_mut().unwrap();
+        let _ = root_tk
+            .expect_recv_effect(async |mut effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
                 assert_eq!(**m, 1);
-                tracing::info!("the first effect contains 1; discarding the effect");
+                tracing::info!("discarding 1");
                 effect.discard();
             })
             .instrument(info_span!("testkit"))
             .await;
-        let _ = tk
-            .test_next_effect(async |effect| {
-                let effect = effect.unwrap();
-                let effect = effect.into_recv().unwrap();
+
+        let _ = root_tk
+            .expect_recv_effect(async |effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
-                tracing::info!("the second effect contains 2");
                 assert_eq!(**m, 2);
             })
             .instrument(info_span!("testkit"))
             .await;
 
-        actor_handle.await.unwrap();
+        root_handle.await.unwrap();
     }
 }
