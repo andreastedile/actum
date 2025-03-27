@@ -8,7 +8,7 @@ use crate::effect::{
     SpawnEffectFromTestkitToActor,
 };
 use crate::message_receiver::MessageReceiver;
-use crate::testkit::Testkit;
+use crate::testkit::create_testkit_pair;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
@@ -180,28 +180,13 @@ where
         let receiver = MessageReceiver::<M2>::new(m2_channel.1);
         let actor_ref = ActorRef::<M2>::new(m2_channel.0);
 
-        let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M2>>(1);
-        let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M2>>(1);
-        let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
-        let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
-        let extension = TestExtension::new(
-            recv_effect_actor_to_testkit_channel.0,
-            recv_effect_testkit_to_actor_channel.1,
-            spawn_effect_actor_to_testkit_channel.0,
-            spawn_effect_testkit_to_actor_channel.1,
-        );
+        let (extension, testkit) = create_testkit_pair::<M2>();
 
         let cell = ActorCell::new(extension);
 
         let tracker = self.tracker.get_or_insert_default();
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
 
-        let testkit = Testkit::new(
-            recv_effect_actor_to_testkit_channel.1,
-            recv_effect_testkit_to_actor_channel.0,
-            spawn_effect_actor_to_testkit_channel.1,
-            spawn_effect_testkit_to_actor_channel.0,
-        );
         let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit(Some(testkit.into()));
 
         self.dependency

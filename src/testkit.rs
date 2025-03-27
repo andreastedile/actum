@@ -14,6 +14,27 @@ use futures::{future, StreamExt};
 use std::any::Any;
 use std::future::Future;
 
+pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
+    let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
+    let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
+    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
+    let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
+    let extension = TestExtension::<M>::new(
+        recv_effect_actor_to_testkit_channel.0,
+        recv_effect_testkit_to_actor_channel.1,
+        spawn_effect_actor_to_testkit_channel.0,
+        spawn_effect_testkit_to_actor_channel.1,
+    );
+    let testkit = Testkit::new(
+        recv_effect_actor_to_testkit_channel.1,
+        recv_effect_testkit_to_actor_channel.0,
+        spawn_effect_actor_to_testkit_channel.1,
+        spawn_effect_testkit_to_actor_channel.0,
+    );
+
+    (extension, testkit)
+}
+
 /// Receive and test actor [effects](EffectFromActorToTestkit).
 ///
 /// # Examples
@@ -236,26 +257,12 @@ where
 {
     let m_channel = mpsc::channel::<M>(100);
 
-    let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
-    let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
-    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
-    let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
-    let extension = TestExtension::<M>::new(
-        recv_effect_actor_to_testkit_channel.0,
-        recv_effect_testkit_to_actor_channel.1,
-        spawn_effect_actor_to_testkit_channel.0,
-        spawn_effect_testkit_to_actor_channel.1,
-    );
+    let (extension, testkit) = create_testkit_pair::<M>();
+
     let cell = ActorCell::<TestExtension<M>>::new(extension);
     let receiver = MessageReceiver::<M>::new(m_channel.1);
     let actor_ref = ActorRef::new(m_channel.0);
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
-    let testkit = Testkit::new(
-        recv_effect_actor_to_testkit_channel.1,
-        recv_effect_testkit_to_actor_channel.0,
-        spawn_effect_actor_to_testkit_channel.1,
-        spawn_effect_testkit_to_actor_channel.0,
-    );
 
     (ActorToSpawn::new(task, actor_ref), testkit)
 }
