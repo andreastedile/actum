@@ -7,9 +7,9 @@ digraph StateMachine {
     S2 [label="S2: waiting for testkit = true"];
 
     S0 -> S0 [label="drop or create /"];
-    S0 -> S1 [label="message or stopped / effect out"];
+    S0 -> S1 [label="Recv / effect out"];
     S1 -> S2 [label="drop or create /"];
-    S1 -> S0 [label="effect in / resolve Recv "];
+    S1 -> S0 [label="effect in / Recv "];
     S2 -> S2 [label="drop or create /"];
     S2 -> S1 [label="effect in / effect out"];
 }
