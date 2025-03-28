@@ -48,6 +48,7 @@ where
 #[tokio::test]
 async fn test() {
     use actum::testkit::actum_with_testkit;
+    use actum::testkit::ActumWithTestkit;
 
     tracing_subscriber::fmt()
         .with_span_events(
@@ -58,13 +59,17 @@ async fn test() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let (mut parent, mut parent_testkit) = actum_with_testkit(generic_parent);
+    let ActumWithTestkit {
+        task,
+        mut actor_ref,
+        testkit: mut parent_tk,
+    } = actum_with_testkit(generic_parent);
     let span = tracing::trace_span!("parent");
-    let handle = tokio::spawn(parent.task.run_task().instrument(span));
+    let handle = tokio::spawn(task.run_task().instrument(span));
 
-    parent.actor_ref.try_send(1).unwrap();
+    actor_ref.try_send(1).unwrap();
 
-    let _ = parent_testkit
+    let _ = parent_tk
         .test_next_effect(async |effect| {
             let effect = effect.unwrap();
             let recv = effect.unwrap_recv();
@@ -73,7 +78,7 @@ async fn test() {
         })
         .await;
 
-    let mut child_testkit = parent_testkit
+    let mut child_testkit = parent_tk
         .test_next_effect(async |effect| {
             let effect = effect.unwrap();
             let mut spawn = effect.unwrap_spawn();
@@ -91,7 +96,7 @@ async fn test() {
         })
         .await;
 
-    let _ = parent_testkit
+    let _ = parent_tk
         .test_next_effect(async |effect| {
             let effect = effect.unwrap();
             let recv = effect.unwrap_recv();

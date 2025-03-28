@@ -2,7 +2,6 @@ use crate::actor_cell::test_actor::TestExtension;
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
-use crate::actor_to_spawn::ActorToSpawn;
 
 use crate::actor_ref::MessageReceiver;
 use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
@@ -124,8 +123,9 @@ impl<M> Testkit<M> {
     /// ```
     /// use actum::prelude::*;
     /// use actum::testkit::actum_with_testkit;
+    /// use actum::testkit::ActumWithTestkit;
     ///
-    /// async fn first<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
+    /// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
     /// where
     ///     A: Actor<u64>,
     /// {
@@ -137,10 +137,10 @@ impl<M> Testkit<M> {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (mut first, mut testkit) = actum_with_testkit(first);
-    ///     let handle = tokio::spawn(first.task.run_task());
+    ///     let ActumWithTestkit { task, mut actor_ref, mut testkit } = actum_with_testkit(root);
+    ///     let handle = tokio::spawn(task.run_task());
     ///
-    ///     first.actor_ref.try_send(1).unwrap();
+    ///     actor_ref.try_send(1).unwrap();
     ///
     ///     let _ = testkit
     ///         .test_next_effect(async |effect| {
@@ -202,6 +202,7 @@ impl<M> Testkit<M> {
     /// ```
     /// use actum::prelude::*;
     /// use actum::testkit::actum_with_testkit;
+    /// use actum::testkit::ActumWithTestkit;
     ///
     /// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
     /// where
@@ -224,8 +225,8 @@ impl<M> Testkit<M> {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (parent, mut parent_tk) = actum_with_testkit(parent);
-    ///     let handle = tokio::spawn(parent.task.run_task());
+    ///     let ActumWithTestkit { task, mut actor_ref, testkit: mut parent_tk } = actum_with_testkit(parent);
+    ///     let handle = tokio::spawn(task.run_task());
     ///     
     ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
     ///         let testkit = effect.any_testkit.downcast_unwrap::<u32>();
@@ -353,9 +354,13 @@ impl AnyTestkit {
     }
 }
 
-pub fn actum_with_testkit<M, F, Fut, Ret>(
-    f: F,
-) -> (ActorToSpawn<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>, Testkit<M>)
+pub struct ActumWithTestkit<M, RT> {
+    pub task: RT,
+    pub actor_ref: ActorRef<M>,
+    pub testkit: Testkit<M>,
+}
+
+pub fn actum_with_testkit<M, F, Fut, Ret>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<TestExtension<M>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -369,7 +374,11 @@ where
     let cell = ActorCell::<TestExtension<M>>::new(extension);
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
-    (ActorToSpawn::new(task, actor_ref), testkit)
+    ActumWithTestkit {
+        task,
+        actor_ref,
+        testkit,
+    }
 }
 
 #[cfg(test)]
@@ -394,30 +403,33 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut root, mut root_tk) =
-            actum_with_testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+        let ActumWithTestkit {
+            task,
+            mut actor_ref,
+            mut testkit,
+        } = actum_with_testkit::<NonClone, _, _, ()>(|mut cell, mut receiver, _| async move {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                let mut recv_future = cell.recv(&mut receiver);
-                poll_fn(|cx| match recv_future.poll_unpin(cx) {
-                    Poll::Ready(_) => panic!("the testkit should be slow"),
-                    Poll::Pending => Poll::Ready(()),
-                })
-                .await;
-                drop(recv_future);
+            let mut recv_future = cell.recv(&mut receiver);
+            poll_fn(|cx| match recv_future.poll_unpin(cx) {
+                Poll::Ready(_) => panic!("the testkit should be slow"),
+                Poll::Pending => Poll::Ready(()),
+            })
+            .await;
+            drop(recv_future);
 
-                let _ = cell.recv(&mut receiver).await.into_message().unwrap();
-                tracing::info!("received NonClone");
+            let _ = cell.recv(&mut receiver).await.into_message().unwrap();
+            tracing::info!("received NonClone");
 
-                (cell, ())
-            });
+            (cell, ())
+        });
 
-        let root_handle = tokio::spawn(root.task.run_task().instrument(info_span!("root")));
+        let root_handle = tokio::spawn(task.run_task().instrument(info_span!("root")));
 
         // Immediately send the NonClone.
-        assert!(root.actor_ref.try_send(NonClone).is_ok());
+        assert!(actor_ref.try_send(NonClone).is_ok());
 
-        let _ = root_tk
+        let _ = testkit
             .test_next_effect(async |effect| {
                 let _ = effect.unwrap();
                 tracing::info!("effect received; sleeping");
@@ -426,7 +438,7 @@ mod tests {
             .instrument(info_span!("testkit"))
             .await;
 
-        let _ = root_tk
+        let _ = testkit
             .test_next_effect(async |effect| {
                 let _ = effect.unwrap();
                 tracing::info!("effect received");
@@ -445,7 +457,11 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .try_init();
 
-        let (mut root, mut root_tk) = actum_with_testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
+        let ActumWithTestkit {
+            task,
+            mut actor_ref,
+            mut testkit,
+        } = actum_with_testkit::<u32, _, _, ()>(|mut cell, mut receiver, _| async move {
             let m = cell.recv(&mut receiver).await.into_message().unwrap();
             assert_eq!(m, 2);
             tracing::info!("received 2");
@@ -453,17 +469,17 @@ mod tests {
             (cell, ())
         });
 
-        let root_handle = tokio::spawn(root.task.run_task().instrument(info_span!("root")));
+        let root_handle = tokio::spawn(task.run_task().instrument(info_span!("root")));
 
         // Send two messages and discard the first. Only the second can be received.
 
         tracing::info!("sending 1 to actor");
-        let _ = root.actor_ref.try_send(1);
+        let _ = actor_ref.try_send(1);
 
         tracing::info!("sending 2 to actor");
-        let _ = root.actor_ref.try_send(2);
+        let _ = actor_ref.try_send(2);
 
-        let _ = root_tk
+        let _ = testkit
             .expect_recv_effect(async |mut effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
                 assert_eq!(**m, 1);
@@ -473,7 +489,7 @@ mod tests {
             .instrument(info_span!("testkit"))
             .await;
 
-        let _ = root_tk
+        let _ = testkit
             .expect_recv_effect(async |effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
                 assert_eq!(**m, 2);
