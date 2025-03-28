@@ -1,0 +1,53 @@
+error[E0277]: the trait bound `ActorCell<(), u32>: actum::actor::Actor<u64, String>` is not satisfied
+  --> tests/ui/return_type_v2.rs:14:23
+   |
+14 |     let _root = actum(root_v2);
+   |                       ^^^^^^^ the trait `actum::actor::Actor<u64, String>` is not implemented for `ActorCell<(), u32>`
+   |
+   = help: the following other types implement trait `actum::actor::Actor<M, Ret>`:
+             ActorCell<(), Ret>
+             ActorCell<TestExtension<M, Ret>, Ret>
+note: required by a bound in `root_v2`
+  --> tests/ui/return_type_v2.rs:5:8
+   |
+3  | async fn root_v2<A>(mut cell: A, mut receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, u32)
+   |          ------- required by a bound in this function
+4  | where
+5  |     A: Actor<u64, String>,
+   |        ^^^^^^^^^^^^^^^^^^ required by this bound in `root_v2`
+
+error[E0277]: the trait bound `ActorCell<(), u32>: actum::actor::Actor<u64, String>` is not satisfied
+  --> tests/ui/return_type_v2.rs:14:17
+   |
+14 |     let _root = actum(root_v2);
+   |                 ^^^^^ the trait `actum::actor::Actor<u64, String>` is not implemented for `ActorCell<(), u32>`
+   |
+   = help: the following other types implement trait `actum::actor::Actor<M, Ret>`:
+             ActorCell<(), Ret>
+             ActorCell<TestExtension<M, Ret>, Ret>
+note: required by a bound in `root_v2`
+  --> tests/ui/return_type_v2.rs:5:8
+   |
+3  | async fn root_v2<A>(mut cell: A, mut receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, u32)
+   |          ------- required by a bound in this function
+4  | where
+5  |     A: Actor<u64, String>,
+   |        ^^^^^^^^^^^^^^^^^^ required by this bound in `root_v2`
+
+error[E0277]: the trait bound `ActorCell<(), u32>: actum::actor::Actor<u64, String>` is not satisfied
+  --> tests/ui/return_type_v2.rs:14:17
+   |
+14 |     let _root = actum(root_v2);
+   |                 ^^^^^^^^^^^^^^ the trait `actum::actor::Actor<u64, String>` is not implemented for `ActorCell<(), u32>`
+   |
+   = help: the following other types implement trait `actum::actor::Actor<M, Ret>`:
+             ActorCell<(), Ret>
+             ActorCell<TestExtension<M, Ret>, Ret>
+note: required by a bound in `root_v2`
+  --> tests/ui/return_type_v2.rs:5:8
+   |
+3  | async fn root_v2<A>(mut cell: A, mut receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, u32)
+   |          ------- required by a bound in this function
+4  | where
+5  |     A: Actor<u64, String>,
+   |        ^^^^^^^^^^^^^^^^^^ required by this bound in `root_v2`

@@ -13,7 +13,7 @@ pub struct ActorTask<M, F, Fut, Ret, D> {
     f: F,
     ret: PhantomData<Ret>,
     fut: PhantomData<Fut>,
-    cell: ActorCell<D>,
+    cell: ActorCell<D, Ret>,
     receiver: MessageReceiver<M>,
     actor_ref: ActorRef<M>,
     /// None if there is no parent (thus, the actor is the root of the tree).
@@ -23,7 +23,7 @@ pub struct ActorTask<M, F, Fut, Ret, D> {
 impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
     pub const fn new(
         f: F,
-        cell: ActorCell<D>,
+        cell: ActorCell<D, Ret>,
         receiver: MessageReceiver<M>,
         actor_ref: ActorRef<M>,
         waker: Option<WakeParentOnDrop>,
@@ -43,8 +43,8 @@ impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
 impl<M, F, Fut, Ret, D> RunTask<Ret> for ActorTask<M, F, Fut, Ret, D>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<D>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<D>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<D, Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<D, Ret>, Ret)> + Send + 'static,
     Ret: Send + 'static,
     D: Send + 'static,
 {

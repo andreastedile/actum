@@ -92,19 +92,19 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M, Ret> Actor<M, Ret> for ActorCell<TestExtension<M, Ret>>
+impl<M, Ret> Actor<M, Ret> for ActorCell<TestExtension<M, Ret>, Ret>
 where
     M: Send + 'static,
     Ret: Send + 'static,
 {
     type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = TestExtension<M2, Ret2>;
-    type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<TestExtension<M2, Ret2>>;
+    type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<TestExtension<M2, Ret2>, Ret2>;
     type HasRunTask<M2, F, Fut, Ret2>
         = ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<TestExtension<M2, Ret2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>>, Ret2)> + Send + 'static,
+        F: FnOnce(ActorCell<TestExtension<M2, Ret2>, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>, Ret2>, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
 
     fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a {
@@ -173,8 +173,8 @@ where
     ) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<TestExtension<M2, Ret2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>>, Ret2)> + Send + 'static,
+        F: FnOnce(ActorCell<TestExtension<M2, Ret2>, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>, Ret2>, Ret2)> + Send + 'static,
         Ret2: Send + 'static,
     {
         assert!(!self.dependency.spawn_effect_sender.is_closed());

@@ -369,15 +369,15 @@ pub fn actum_with_testkit<M, F, Fut, Ret>(
 ) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret, TestExtension<M, Ret>>, Ret>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<TestExtension<M, Ret>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<TestExtension<M, Ret>>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<TestExtension<M, Ret>, Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<TestExtension<M, Ret>, Ret>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
     let (extension, testkit) = create_testkit_pair::<M, Ret>();
 
-    let cell = ActorCell::<TestExtension<M, Ret>>::new(extension);
+    let cell = ActorCell::<TestExtension<M, Ret>, Ret>::new(extension);
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
     ActumWithTestkit {

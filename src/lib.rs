@@ -49,8 +49,8 @@ pub mod testkit;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut root = actum::<u64, _, _, ()>(|mut cell, mut receiver, me| async move {
-///         let m = <ActorCell<()> as Actor<u64, ()>>::recv(&mut cell, &mut receiver).await.into_message().unwrap();
+///     let mut root = actum::<u64, _, _, _>(|mut cell, mut receiver, me| async move {
+///         let m = cell.recv(&mut receiver).await.into_message().unwrap();
 ///         println!("{}", m);
 ///         (cell, ())
 ///     });
@@ -86,13 +86,13 @@ pub mod testkit;
 pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, ()>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<()>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<(), Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<(), Ret>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
-    let cell = ActorCell::<()>::new(());
+    let cell = ActorCell::<(), Ret>::new(());
 
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
