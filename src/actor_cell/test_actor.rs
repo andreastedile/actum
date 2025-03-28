@@ -10,9 +10,10 @@ use crate::testkit::create_testkit_pair;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
+use std::marker::PhantomData;
 use std::task::{ready, Poll};
 
-pub struct TestExtension<M> {
+pub struct TestExtension<M, Ret> {
     /// used to send recv effects from the actor under test to the corresponding testkit.
     pub recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     /// used to receive recv effects from the testkit to the actor.
@@ -24,9 +25,11 @@ pub struct TestExtension<M> {
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit>,
     /// used to receive spawn effects from the testkit to the actor.
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
+
+    _ret: PhantomData<Ret>,
 }
 
-impl<M> TestExtension<M> {
+impl<M, Ret> TestExtension<M, Ret> {
     pub const fn new(
         recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
@@ -39,6 +42,7 @@ impl<M> TestExtension<M> {
             spawn_effect_sender,
             spawn_effect_receiver,
             state: RecvFutureStateMachine::S0,
+            _ret: PhantomData,
         }
     }
 }
@@ -88,19 +92,20 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M> Actor<M> for ActorCell<TestExtension<M>>
+impl<M, Ret> Actor<M, Ret> for ActorCell<TestExtension<M, Ret>>
 where
     M: Send + 'static,
+    Ret: Send + 'static,
 {
-    type ChildActorDependency<M2: Send + 'static> = TestExtension<M2>;
-    type ChildActor<M2: Send + 'static> = ActorCell<TestExtension<M2>>;
-    type HasRunTask<M2, F, Fut, Ret>
-        = ActorTask<M2, F, Fut, Ret, TestExtension<M2>>
+    type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = TestExtension<M2, Ret2>;
+    type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<TestExtension<M2, Ret2>>;
+    type HasRunTask<M2, F, Fut, Ret2>
+        = ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<TestExtension<M2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<TestExtension<M2>>, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        F: FnOnce(ActorCell<TestExtension<M2, Ret2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static;
 
     fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a {
         if self.dependency.state == RecvFutureStateMachine::S1 {
@@ -162,20 +167,20 @@ where
         })
     }
 
-    async fn create_child<M2, F, Fut, Ret>(
+    async fn create_child<M2, F, Fut, Ret2>(
         &mut self,
         f: F,
-    ) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, TestExtension<M2>>>
+    ) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>>
     where
         M2: Send + 'static,
-        F: FnOnce(ActorCell<TestExtension<M2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<TestExtension<M2>>, Ret)> + Send + 'static,
-        Ret: Send + 'static,
+        F: FnOnce(ActorCell<TestExtension<M2, Ret2>>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static,
     {
         assert!(!self.dependency.spawn_effect_sender.is_closed());
 
         let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
-        let (extension, testkit) = create_testkit_pair::<M2>();
+        let (extension, testkit) = create_testkit_pair::<M2, Ret2>();
 
         let cell = ActorCell::new(extension);
 

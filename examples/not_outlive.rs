@@ -12,7 +12,7 @@ use actum::prelude::*;
 
 async fn parent<A>(mut cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
 where
-    A: Actor<()>,
+    A: Actor<(), ()>,
 {
     let child = cell.create_child(child).await;
     let span = tracing::trace_span!("child");
@@ -25,7 +25,7 @@ where
 
 async fn child<A>(cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
 where
-    A: Actor<()>,
+    A: Actor<(), ()>,
 {
     tracing::info!("sleeping for 1 second");
     tokio::time::sleep(Duration::from_secs(1)).await;

@@ -1,0 +1,13 @@
+error[E0283]: type annotations needed
+ --> tests/ui/return_type_v1.rs:6:22
+  |
+6 |         let _ = cell.recv(&mut receiver).await;
+  |                      ^^^^
+  |
+  = note: cannot satisfy `_: Send`
+  = note: required for `ActorCell<()>` to implement `actum::actor::Actor<u64, _>`
+help: try using a fully qualified path to specify the expected types
+  |
+6 -         let _ = cell.recv(&mut receiver).await;
+6 +         let _ = <ActorCell<()> as actum::actor::Actor<u64, Ret>>::recv(&mut cell, &mut receiver).await;
+  |

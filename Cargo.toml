@@ -18,3 +18,4 @@ either = "1.15.0"
 [dev-dependencies]
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+trybuild = "1.0.104"

@@ -6,22 +6,25 @@ use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
-pub trait Actor<M>: Send + 'static
+pub trait Actor<M, Ret>: Send + 'static
 where
     M: Send + 'static,
+    Ret: Send + 'static,
 {
-    type ChildActorDependency<M2>: Send + 'static
-    where
-        M2: Send + 'static;
-    type ChildActor<M2>: Actor<M2>
-    where
-        M2: Send + 'static;
-    type HasRunTask<M2, F, Fut, Ret>: RunTask<Ret>
+    type ChildActorDependency<M2, Ret2>: Send + 'static
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Ret2: Send + 'static;
+    type ChildActor<M2, Ret2>: Actor<M2, Ret2>
+    where
+        M2: Send + 'static,
+        Ret2: Send + 'static;
+    type HasRunTask<M2, F, Fut, Ret2>: RunTask<Ret2>
+    where
+        M2: Send + 'static,
+        F: FnOnce(Self::ChildActor<M2, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static;
 
     /// Asynchronously receive the next message.
     fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a;
@@ -31,15 +34,15 @@ where
     ///
     /// See the [actum](crate::actum) function for passing a function pointer, passing a closure and
     /// for passing arguments to the actor.
-    fn create_child<M2, F, Fut, Ret>(
+    fn create_child<M2, F, Fut, Ret2>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret>>> + Send + '_
+    ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>> + Send + '_
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActor<M2>, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        F: FnOnce(Self::ChildActor<M2, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static;
 }
 
 /// Value returned by the [recv](Actor::recv) method.

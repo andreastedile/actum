@@ -16,3 +16,12 @@ impl<D> ActorCell<D> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_it() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/ui/return_type_v1.rs");
+    }
+}

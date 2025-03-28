@@ -28,7 +28,7 @@ pub mod testkit;
 ///
 /// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
 /// where
-///     A: Actor<u64>,
+///     A: Actor<u64, ()>,
 /// {
 ///     let m = cell.recv(&mut receiver).await.into_message().unwrap();
 ///     println!("{}", m);
@@ -49,8 +49,8 @@ pub mod testkit;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut root = actum::<u64, _, _, _>(|mut cell, mut receiver, me| async move {
-///         let m = cell.recv(&mut receiver).await.into_message().unwrap();
+///     let mut root = actum::<u64, _, _, ()>(|mut cell, mut receiver, me| async move {
+///         let m = <ActorCell<()> as Actor<u64, ()>>::recv(&mut cell, &mut receiver).await.into_message().unwrap();
 ///         println!("{}", m);
 ///         (cell, ())
 ///     });
@@ -65,7 +65,7 @@ pub mod testkit;
 ///
 /// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
 /// where
-///     A: Actor<u64>,
+///     A: Actor<u64, ()>,
 /// {
 ///     let m = cell.recv(&mut receiver).await.into_message().unwrap();
 ///     vec.push(m);

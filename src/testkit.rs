@@ -13,13 +13,14 @@ use futures::{future, StreamExt};
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
+use std::marker::PhantomData;
 
-pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
+pub fn create_testkit_pair<M, Ret>() -> (TestExtension<M, Ret>, Testkit<M, Ret>) {
     let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
     let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
-    let extension = TestExtension::<M>::new(
+    let extension = TestExtension::<M, Ret>::new(
         recv_effect_actor_to_testkit_channel.0,
         recv_effect_testkit_to_actor_channel.1,
         spawn_effect_actor_to_testkit_channel.0,
@@ -35,14 +36,15 @@ pub fn create_testkit_pair<M>() -> (TestExtension<M>, Testkit<M>) {
     (extension, testkit)
 }
 
-pub struct Testkit<M> {
+pub struct Testkit<M, Ret> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
+    _ret: PhantomData<Ret>,
 }
 
-impl<M> Testkit<M> {
+impl<M, Ret> Testkit<M, Ret> {
     pub const fn new(
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
@@ -54,6 +56,7 @@ impl<M> Testkit<M> {
             recv_effect_sender,
             spawn_effect_receiver,
             spawn_effect_sender,
+            _ret: PhantomData,
         }
     }
 
@@ -127,7 +130,7 @@ impl<M> Testkit<M> {
     ///
     /// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
     /// where
-    ///     A: Actor<u64>,
+    ///     A: Actor<u64, ()>,
     /// {
     ///     let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
     ///     me.try_send(m1 * 2).unwrap();
@@ -206,7 +209,7 @@ impl<M> Testkit<M> {
     ///
     /// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
     /// where
-    ///     A: Actor<u64>,
+    ///     A: Actor<u64, ()>,
     /// {
     ///     println!("got here");
     ///     let child = cell.create_child(child).await;
@@ -218,7 +221,7 @@ impl<M> Testkit<M> {
     ///
     /// async fn child<A>(mut cell: A, _receiver: MessageReceiver<u32>, _me: ActorRef<u32>) -> (A, ())
     /// where
-    ///     A: Actor<u32>,
+    ///     A: Actor<u32, ()>,
     /// {
     ///     (cell, ())
     /// }
@@ -229,7 +232,7 @@ impl<M> Testkit<M> {
     ///     let handle = tokio::spawn(task.run_task());
     ///     
     ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
-    ///         let testkit = effect.any_testkit.downcast_unwrap::<u32>();
+    ///         let testkit = effect.any_testkit.downcast_unwrap::<u32, ()>();
     ///         testkit
     ///     }).await;
     ///
@@ -325,21 +328,22 @@ impl Debug for AnyTestkit {
     }
 }
 
-impl<M> From<Testkit<M>> for AnyTestkit
+impl<M, Ret> From<Testkit<M, Ret>> for AnyTestkit
 where
     M: Send + 'static,
+    Ret: Send + 'static,
 {
-    fn from(testkit: Testkit<M>) -> Self {
+    fn from(testkit: Testkit<M, Ret>) -> Self {
         Self(Some(Box::new(testkit)))
     }
 }
 
 impl AnyTestkit {
     /// Attempt to downcast to a concrete M-typed [Testkit].
-    pub fn downcast<M: 'static>(&mut self) -> Option<Testkit<M>> {
+    pub fn downcast<M: 'static, Ret: 'static>(&mut self) -> Option<Testkit<M, Ret>> {
         let any_testkit = self.0.take()?;
 
-        match any_testkit.downcast::<Testkit<M>>() {
+        match any_testkit.downcast::<Testkit<M, Ret>>() {
             Ok(m_testkit) => Some(*m_testkit),
             Err(testkit) => {
                 self.0 = Some(testkit);
@@ -348,30 +352,32 @@ impl AnyTestkit {
         }
     }
 
-    pub fn downcast_unwrap<M: 'static>(&mut self) -> Testkit<M> {
+    pub fn downcast_unwrap<M: 'static, Ret: 'static>(&mut self) -> Testkit<M, Ret> {
         self.downcast()
             .unwrap_or_else(|| panic!("testkit is not downcastable to {}", std::any::type_name::<M>()))
     }
 }
 
-pub struct ActumWithTestkit<M, RT> {
+pub struct ActumWithTestkit<M, RT, Ret> {
     pub task: RT,
     pub actor_ref: ActorRef<M>,
-    pub testkit: Testkit<M>,
+    pub testkit: Testkit<M, Ret>,
 }
 
-pub fn actum_with_testkit<M, F, Fut, Ret>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret, TestExtension<M>>>
+pub fn actum_with_testkit<M, F, Fut, Ret>(
+    f: F,
+) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret, TestExtension<M, Ret>>, Ret>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<TestExtension<M>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<TestExtension<M>>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<TestExtension<M, Ret>>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<TestExtension<M, Ret>>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
-    let (extension, testkit) = create_testkit_pair::<M>();
+    let (extension, testkit) = create_testkit_pair::<M, Ret>();
 
-    let cell = ActorCell::<TestExtension<M>>::new(extension);
+    let cell = ActorCell::<TestExtension<M, Ret>>::new(extension);
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
     ActumWithTestkit {

@@ -6,30 +6,31 @@ use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use std::future::Future;
 
-impl<M> Actor<M> for ActorCell<()>
+impl<M, Ret> Actor<M, Ret> for ActorCell<()>
 where
     M: Send + 'static,
+    Ret: Send + 'static,
 {
-    type ChildActorDependency<M2: Send + 'static> = ();
-    type ChildActor<M2: Send + 'static> = ActorCell<()>;
-    type HasRunTask<M2, F, Fut, Ret>
-        = ActorTask<M2, F, Fut, Ret, ()>
+    type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = ();
+    type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<()>;
+    type HasRunTask<M2, F, Fut, Ret2>
+        = ActorTask<M2, F, Fut, Ret2, ()>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<()>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Fut: Future<Output = (ActorCell<()>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static;
 
     fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a {
         receiver.recv()
     }
 
-    async fn create_child<M2, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret, ()>>
+    async fn create_child<M2, F, Fut, Ret2>(&mut self, f: F) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret2, ()>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<()>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
-        Ret: Send + 'static,
+        Fut: Future<Output = (ActorCell<()>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static,
     {
         let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
 
