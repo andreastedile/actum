@@ -1,48 +1,35 @@
 use actum::prelude::*;
 use tracing::Instrument;
 
-async fn generic_parent<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: ActorRef<u64>) -> (A, ())
+async fn generic_parent<A>(mut cell: A, mut receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
 where
     A: Actor<u64, ()>,
 {
-    let m1 = cell.recv(&mut receiver).await.into_message().unwrap();
-    tracing::info!(recv = m1);
+    let m = cell.recv(&mut receiver).await.into_message().unwrap();
+    tracing::info!(recv = m);
 
-    let parent = me.clone();
     let child = cell
-        .create_child(move |cell, receiver, me| async move { generic_child(cell, receiver, me, parent, m1).await })
+        .create_child(move |cell, receiver, me| async move { generic_child(cell, receiver, me, m).await })
         .await;
     let span = tracing::trace_span!("child");
-    tokio::spawn(child.task.run_task().instrument(span));
+    let m_times_two = tokio::spawn(child.task.run_task().instrument(span)).await.unwrap();
 
-    let m2 = cell.recv(&mut receiver).await.into_message().unwrap();
-    tracing::info!(recv = m2);
-
-    assert_eq!(m2, m1 * 2);
+    assert_eq!(m_times_two, m * 2);
 
     (cell, ())
 }
 
-async fn generic_child<A>(
-    mut cell: A,
-    mut receiver: MessageReceiver<u64>,
-    mut me: ActorRef<u64>,
-    mut parent: ActorRef<u64>,
-    m: u64,
-) -> (A, ())
+async fn generic_child<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>, m: u64) -> (A, u64)
 where
-    A: Actor<u64, ()>,
+    A: Actor<u64, u64>,
 {
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
 
-    let m = cell.recv(&mut receiver).await.into_message().unwrap();
-    tracing::info!(recv = m);
+    let m_times_two = cell.recv(&mut receiver).await.into_message().unwrap();
+    tracing::info!(recv = m_times_two);
 
-    tracing::info!(try_send = m);
-    parent.try_send(m).unwrap();
-
-    (cell, ())
+    (cell, m_times_two)
 }
 
 #[tokio::test]
@@ -70,40 +57,33 @@ async fn test() {
     actor_ref.try_send(1).unwrap();
 
     let _ = parent_tk
-        .test_next_effect(async |effect| {
-            let effect = effect.unwrap();
-            let recv = effect.unwrap_recv();
-            let m = recv.recv.unwrap_message();
+        .expect_recv_effect(async |effect| {
+            let m = effect.recv.as_ref().into_message().unwrap();
             assert_eq!(*m, 1);
         })
         .await;
 
-    let mut child_testkit = parent_tk
-        .test_next_effect(async |effect| {
-            let effect = effect.unwrap();
-            let mut spawn = effect.unwrap_spawn();
-            let testkit = spawn.testkit.downcast_unwrap::<u64>();
+    let mut child_tk = parent_tk
+        .expect_spawn_effect(async |mut effect| {
+            let testkit = effect.downcast_unwrap::<u64, u64>();
             testkit
         })
         .await;
 
-    let _ = child_testkit
-        .test_next_effect(async |effect| {
-            let effect = effect.unwrap();
-            let recv = effect.unwrap_recv();
-            let m = recv.recv.unwrap_message();
+    let _ = child_tk
+        .expect_recv_effect(async |effect| {
+            let m = effect.recv.as_ref().into_message().unwrap();
             assert_eq!(*m, 2);
         })
         .await;
 
-    let _ = parent_tk
-        .test_next_effect(async |effect| {
-            let effect = effect.unwrap();
-            let recv = effect.unwrap_recv();
-            let m = recv.recv.unwrap_message();
-            assert_eq!(*m, 2);
+    let _ = child_tk
+        .expect_returned_effect(async |effect| {
+            assert_eq!(effect.ret, 2);
         })
         .await;
+
+    let _ = parent_tk.expect_returned_effect(async |_| {}).await;
 
     handle.await.unwrap();
 }

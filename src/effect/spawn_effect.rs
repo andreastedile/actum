@@ -1,8 +1,8 @@
-use crate::testkit::AnyTestkit;
+use crate::testkit::{AnyTestkit, Testkit};
 use std::fmt::{Debug, Formatter};
 
 pub struct SpawnEffect {
-    pub any_testkit: AnyTestkit,
+    pub(crate) any_testkit: Option<AnyTestkit>,
 }
 
 impl Debug for SpawnEffect {
@@ -11,8 +11,18 @@ impl Debug for SpawnEffect {
     }
 }
 
+impl SpawnEffect {
+    pub fn downcast<M: 'static, Ret: 'static>(&mut self) -> Option<Testkit<M, Ret>> {
+        self.any_testkit.take().unwrap().downcast::<M, Ret>()
+    }
+
+    pub fn downcast_unwrap<M: 'static, Ret: 'static>(&mut self) -> Testkit<M, Ret> {
+        self.any_testkit.take().unwrap().downcast_unwrap::<M, Ret>()
+    }
+}
+
 pub struct SpawnEffectFromActorToTestkit {
-    pub any_testkit: Option<AnyTestkit>,
+    pub any_testkit: AnyTestkit,
 }
 
 impl Debug for SpawnEffectFromActorToTestkit {

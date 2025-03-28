@@ -5,9 +5,10 @@ use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
 use crate::effect::spawn_effect::{SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
 use crate::testkit::create_testkit_pair;
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};
 use std::marker::PhantomData;
@@ -26,6 +27,11 @@ pub struct TestExtension<M, Ret> {
     /// used to receive spawn effects from the testkit to the actor.
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
 
+    /// used to send returned effects from the actor under test to the corresponding testkit.
+    pub(crate) returned_effect_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
+    /// used to receive returned effects from the testkit to the actor.
+    pub(crate) returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
+
     _ret: PhantomData<Ret>,
 }
 
@@ -35,13 +41,17 @@ impl<M, Ret> TestExtension<M, Ret> {
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
         spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit>,
         spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
+        returned_effect_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
+        returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
     ) -> Self {
         Self {
             recv_effect_sender,
             recv_effect_receiver,
+            state: RecvFutureStateMachine::S0,
             spawn_effect_sender,
             spawn_effect_receiver,
-            state: RecvFutureStateMachine::S0,
+            returned_effect_sender,
+            returned_effect_receiver,
             _ret: PhantomData,
         }
     }
@@ -188,7 +198,7 @@ where
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
 
         let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit {
-            any_testkit: Some(testkit.into()),
+            any_testkit: testkit.into(),
         };
 
         self.dependency

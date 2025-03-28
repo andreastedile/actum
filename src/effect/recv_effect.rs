@@ -1,20 +1,20 @@
 use crate::actor::Recv;
 use std::fmt::{Debug, Formatter};
 
-pub struct RecvEffect<'a, M> {
-    pub recv: Recv<&'a M>,
-    pub(crate) discarded: &'a mut bool,
+pub struct RecvEffect<M> {
+    pub recv: Recv<M>,
+    pub(crate) discarded: bool,
 }
 
-impl<M> Debug for RecvEffect<'_, M> {
+impl<M> Debug for RecvEffect<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.recv.fmt(f)
     }
 }
 
-impl<M> RecvEffect<'_, M> {
+impl<M> RecvEffect<M> {
     pub fn discard(&mut self) {
-        *self.discarded = true;
+        self.discarded = true;
     }
 }
 

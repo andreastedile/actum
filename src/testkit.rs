@@ -5,43 +5,64 @@ use crate::actor_task::ActorTask;
 
 use crate::actor_ref::MessageReceiver;
 use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::effect::returned_effect::{
+    ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor,
+};
 use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
 use crate::effect::Effect;
-use either::Either;
-use futures::channel::mpsc;
-use futures::{future, StreamExt};
+use futures::channel::{mpsc, oneshot};
+use futures::{FutureExt, StreamExt};
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::future::Future;
-use std::marker::PhantomData;
+use std::future::{poll_fn, Future};
+use std::task::Poll;
 
 pub fn create_testkit_pair<M, Ret>() -> (TestExtension<M, Ret>, Testkit<M, Ret>) {
     let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
     let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
+    let returned_effect_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
+    let returned_effect_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
     let extension = TestExtension::<M, Ret>::new(
         recv_effect_actor_to_testkit_channel.0,
         recv_effect_testkit_to_actor_channel.1,
         spawn_effect_actor_to_testkit_channel.0,
         spawn_effect_testkit_to_actor_channel.1,
+        returned_effect_actor_to_testkit_channel.0,
+        returned_effect_testkit_to_actor_channel.1,
     );
     let testkit = Testkit::new(
         recv_effect_actor_to_testkit_channel.1,
         recv_effect_testkit_to_actor_channel.0,
         spawn_effect_actor_to_testkit_channel.1,
         spawn_effect_testkit_to_actor_channel.0,
+        returned_effect_actor_to_testkit_channel.1,
+        returned_effect_testkit_to_actor_channel.0,
     );
 
     (extension, testkit)
 }
 
 pub struct Testkit<M, Ret> {
+    state: Option<TestkitState<M, Ret>>,
+}
+
+impl<M, Ret> Debug for Testkit<M, Ret> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Testkit")
+            .field("returned", &self.state.is_none())
+            .finish_non_exhaustive()
+    }
+}
+
+pub struct TestkitState<M, Ret> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
-    _ret: PhantomData<Ret>,
+    returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
+    returned_effect_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>>,
 }
 
 impl<M, Ret> Testkit<M, Ret> {
@@ -50,77 +71,108 @@ impl<M, Ret> Testkit<M, Ret> {
         recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
         spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
         spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
+        returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
+        returned_effect_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>,
     ) -> Self {
         Self {
-            recv_effect_receiver,
-            recv_effect_sender,
-            spawn_effect_receiver,
-            spawn_effect_sender,
-            _ret: PhantomData,
+            state: Some(TestkitState {
+                recv_effect_receiver,
+                recv_effect_sender,
+                spawn_effect_receiver,
+                spawn_effect_sender,
+                returned_effect_receiver,
+                returned_effect_sender: Some(returned_effect_sender),
+            }),
         }
     }
 
     /// Receives an effect from the actor under test and evaluates it with the provided closure.
-    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
     ///
     /// The closure can return a generic object, such as the [Testkit] of a child actor.
+    ///
+    /// # Panics
+    /// If the testkit has already received the [ReturnedEffect].
     #[must_use]
-    pub async fn test_next_effect<T>(&mut self, handler: impl AsyncFnOnce(Option<Effect<M>>) -> T) -> T
+    pub async fn test_next_effect<'a, T>(&'a mut self, handler: impl AsyncFnOnce(&mut Effect<M, Ret>) -> T) -> T
     where
         M: Send + 'static,
+        Ret: Send + 'static,
     {
-        let mut effect_from_actor = self.recv_next_effect().await;
+        let state = self.state.as_mut().unwrap();
 
-        let mut discarded = false;
-        let effect = match &mut effect_from_actor {
-            None => None,
-            Some(Either::Left(effect)) => {
-                let effect = RecvEffect {
-                    recv: effect.recv.as_ref(),
-                    discarded: &mut discarded,
-                };
-                Some(Effect::Recv(effect))
+        let mut effect = poll_fn(|cx| {
+            match state.recv_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    return Poll::Ready(Effect::Recv(RecvEffect {
+                        recv: effect.recv,
+                        discarded: false,
+                    }));
+                }
+                Poll::Pending => {}
+            };
+            match state.spawn_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    return Poll::Ready(Effect::Spawn(SpawnEffect {
+                        any_testkit: Some(effect.any_testkit),
+                    }));
+                }
+                Poll::Pending => {}
             }
-            Some(Either::Right(effect)) => {
-                let effect = SpawnEffect {
-                    any_testkit: effect.any_testkit.take().unwrap(),
-                };
-                Some(Effect::Spawn(effect))
+            match state.returned_effect_receiver.poll_unpin(cx) {
+                Poll::Ready(Err(oneshot::Canceled)) => panic!(),
+                Poll::Ready(Ok(effect)) => {
+                    return Poll::Ready(Effect::Returned(ReturnedEffect { ret: effect.ret }));
+                }
+                Poll::Pending => {}
             }
-        };
+            Poll::Pending
+        })
+        .await;
 
-        let t = handler(effect).await;
+        let t = handler(&mut effect).await;
 
-        match effect_from_actor {
-            None => {}
-            Some(Either::Left(effect)) => {
+        match effect {
+            Effect::Recv(inner) => {
                 let effect_to_actor = RecvEffectFromTestkitToActor {
-                    recv: effect.recv,
-                    discarded,
+                    recv: inner.recv,
+                    discarded: inner.discarded,
                 };
-                self.recv_effect_sender
+                state
+                    .recv_effect_sender
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-            Some(Either::Right(effect)) => {
-                assert!(effect.any_testkit.is_none(), "testkit is previously unwrapped");
+            Effect::Spawn(_) => {
                 let effect_to_actor = SpawnEffectFromTestkitToActor;
-                self.spawn_effect_sender
+                state
+                    .spawn_effect_sender
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-        };
+            Effect::Returned(inner) => {
+                let effect_to_actor = ReturnedEffectFromTestkitToActor { ret: inner.ret };
+                state
+                    .returned_effect_sender
+                    .take()
+                    .unwrap()
+                    .send(effect_to_actor)
+                    .expect("could not send effect back to actor");
+
+                self.state = None;
+            }
+        }
 
         t
     }
 
     /// Receives a [RecvEffect] from the actor under test and evaluates it with the provided closure.
-    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
     ///
     /// The closure can return a generic object.
     ///
     /// # Panics
-    /// If the received effect is not the right type.
+    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
     ///
     /// # Example
     /// ```
@@ -146,44 +198,69 @@ impl<M, Ret> Testkit<M, Ret> {
     ///     actor_ref.try_send(1).unwrap();
     ///
     ///     let _ = testkit
-    ///         .test_next_effect(async |effect| {
-    ///             let effect = effect.unwrap();
-    ///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
+    ///         .expect_recv_effect(async |effect| {
+    ///             let m = effect.recv.as_ref().into_message().unwrap();
     ///             assert_eq!(*m, 1);
     ///         })
     ///         .await;
     ///
     ///     let _ = testkit
-    ///         .test_next_effect(async |effect| {
-    ///             let effect = effect.unwrap();
-    ///             let m = effect.into_recv().unwrap().recv.into_message().unwrap();
+    ///         .expect_recv_effect(async |effect| {
+    ///             let m = effect.recv.as_ref().into_message().unwrap();
     ///             assert_eq!(*m, 2);
     ///         })
     ///         .await;
+    ///
+    ///     let _ = testkit.expect_returned_effect(async |_| {}).await;
     ///
     ///     handle.await.unwrap();
     /// }
     /// ```
     #[must_use]
-    pub async fn expect_recv_effect<T>(&mut self, handler: impl AsyncFnOnce(RecvEffect<M>) -> T) -> T
+    pub async fn expect_recv_effect<T>(&mut self, handler: impl AsyncFnOnce(&mut RecvEffect<M>) -> T) -> T
     where
         M: Send + 'static,
+        Ret: Send + 'static,
     {
-        let effect_from_actor = self.recv_next_effect().await.unwrap().unwrap_left();
+        let state = self.state.as_mut().unwrap();
 
-        let mut discarded = false;
-        let effect = RecvEffect {
-            recv: effect_from_actor.recv.as_ref(),
-            discarded: &mut discarded,
-        };
+        let mut effect = poll_fn(|cx| {
+            match state.recv_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    return Poll::Ready(RecvEffect {
+                        recv: effect.recv,
+                        discarded: false,
+                    });
+                }
+                Poll::Pending => {}
+            };
+            match state.spawn_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    panic!("Expected `RecvEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
+            }
+            match state.returned_effect_receiver.poll_unpin(cx) {
+                Poll::Ready(Err(oneshot::Canceled)) => panic!(),
+                Poll::Ready(Ok(effect)) => {
+                    panic!("Expected `RecvEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
+            }
+            Poll::Pending
+        })
+        .await;
 
-        let t = handler(effect).await;
+        let t = handler(&mut effect).await;
 
         let effect_to_actor = RecvEffectFromTestkitToActor {
-            recv: effect_from_actor.recv,
-            discarded,
+            recv: effect.recv,
+            discarded: effect.discarded,
         };
-        self.recv_effect_sender
+        state
+            .recv_effect_sender
             .try_send(effect_to_actor)
             .expect("could not send effect back to actor");
 
@@ -191,12 +268,11 @@ impl<M, Ret> Testkit<M, Ret> {
     }
 
     /// Receives a [SpawnEffect] from the actor under test and evaluates it with the provided closure.
-    /// If the actor has returned, the argument of the closure will be None, for all subsequent calls as well.
     ///
     /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
     /// # Panics
-    /// If the received effect is not the right type.
+    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
     ///
     /// # Examples
     /// Test whether the actor called [spawn](crate::actor::Actor::create_child).
@@ -230,13 +306,14 @@ impl<M, Ret> Testkit<M, Ret> {
     /// async fn main() {
     ///     let ActumWithTestkit { task, mut actor_ref, testkit: mut parent_tk } = actum_with_testkit(parent);
     ///     let handle = tokio::spawn(task.run_task());
-    ///     
+    ///
     ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
-    ///         let testkit = effect.any_testkit.downcast_unwrap::<u32, ()>();
+    ///         let testkit = effect.downcast_unwrap::<u32, ()>();
     ///         testkit
     ///     }).await;
     ///
-    ///     child_tk.expect_returned().await;
+    ///     child_tk.expect_returned_effect(async |_| {}).await;
+    ///     parent_tk.expect_returned_effect(async |_| {}).await;
     ///
     ///     handle.await.unwrap();
     /// }
@@ -245,73 +322,129 @@ impl<M, Ret> Testkit<M, Ret> {
     pub async fn expect_spawn_effect<T>(&mut self, handler: impl AsyncFnOnce(SpawnEffect) -> T) -> T
     where
         M: Send + 'static,
+        Ret: Send + 'static,
     {
-        let mut effect_from_actor = self.recv_next_effect().await.unwrap().unwrap_right();
+        let state = self.state.as_mut().unwrap();
 
-        let effect = SpawnEffect {
-            any_testkit: effect_from_actor.any_testkit.take().unwrap(),
-        };
+        let effect = poll_fn(|cx| {
+            match state.recv_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    panic!("Expected `SpawnEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
+            };
+            match state.spawn_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    return Poll::Ready(SpawnEffect {
+                        any_testkit: Some(effect.any_testkit),
+                    });
+                }
+                Poll::Pending => {}
+            }
+            match state.returned_effect_receiver.poll_unpin(cx) {
+                Poll::Ready(Err(oneshot::Canceled)) => panic!(),
+                Poll::Ready(Ok(effect)) => {
+                    panic!("Expected `SpawnEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
+            }
+            Poll::Pending
+        })
+        .await;
 
         let t = handler(effect).await;
 
-        assert!(
-            effect_from_actor.any_testkit.is_none(),
-            "testkit is previously unwrapped"
-        );
         let effect_to_actor = SpawnEffectFromTestkitToActor;
-        self.spawn_effect_sender
+        state
+            .spawn_effect_sender
             .try_send(effect_to_actor)
             .expect("could not send effect back to actor");
 
         t
     }
 
-    /// Checks that the actor has returned.
-    /// If this is the case, subsequent calls are guaranteed to succeed.
+    /// Receives the [ReturnedEffect] from the actor under test and evaluates it with the provided closure.
+    ///
+    /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
     /// # Panics
-    /// If the actor has not returned yet.
-    pub async fn expect_returned(&mut self)
+    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
+    ///
+    /// # Example
+    /// Test whether the actor returned.
+    /// ```
+    /// use actum::prelude::*;
+    /// use actum::testkit::actum_with_testkit;
+    /// use actum::testkit::ActumWithTestkit;
+    ///
+    /// async fn parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, &'static str)
+    /// where
+    ///     A: Actor<u64, &'static str>,
+    /// {
+    ///     (cell, "returned")
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let ActumWithTestkit { task, mut actor_ref, mut testkit } = actum_with_testkit(parent);
+    ///     let handle = tokio::spawn(task.run_task());
+    ///
+    ///     testkit.expect_returned_effect(async |effect| {
+    ///         assert_eq!(effect.ret, "returned");
+    ///     }).await;
+    ///
+    ///     handle.await.unwrap();
+    /// }
+    /// ```
+    #[must_use]
+    pub async fn expect_returned_effect<T>(&mut self, handler: impl AsyncFnOnce(&mut ReturnedEffect<Ret>) -> T) -> T
     where
         M: Send + 'static,
+        Ret: Send + 'static,
     {
-        let effect_from_actor = self.recv_next_effect().await;
-        match effect_from_actor {
-            None => {}
-            Some(Either::Left(effect)) => {
-                panic!("expected `None`, got an `Either::Left` value: {:?}", effect);
-            }
-            Some(Either::Right(effect)) => {
-                panic!("expected `None`, got an `Either::Right` value: {:?}", effect);
-            }
-        }
-    }
+        let state = self.state.as_mut().unwrap();
 
-    async fn recv_next_effect(
-        &mut self,
-    ) -> Option<Either<RecvEffectFromActorToTestkit<M>, SpawnEffectFromActorToTestkit>>
-    where
-        M: Send + 'static,
-    {
-        let select = future::select(self.recv_effect_receiver.next(), self.spawn_effect_receiver.next()).await;
-
-        let effect_from_actor = match select {
-            future::Either::Left((Some(effect), _)) => Some(Either::Left(effect)),
-            future::Either::Right((Some(effect), _)) => Some(Either::Right(effect)),
-            future::Either::Left((None, _)) => {
-                // The actor has returned -> TestExtension has been dropped at the end of the ActorTask::run_task scope
-                // -> the channel is closed.
-                assert!(self.recv_effect_sender.is_closed());
-                None
+        let mut effect = poll_fn(|cx| {
+            match state.recv_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    panic!("Expected `ReturnedEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
+            };
+            match state.spawn_effect_receiver.next().poll_unpin(cx) {
+                Poll::Ready(None) => panic!(),
+                Poll::Ready(Some(effect)) => {
+                    panic!("Expected `ReturnedEffect`, received {:?}", effect);
+                }
+                Poll::Pending => {}
             }
-            future::Either::Right((None, _)) => {
-                // Same reasoning.
-                assert!(self.spawn_effect_sender.is_closed());
-                None
+            match state.returned_effect_receiver.poll_unpin(cx) {
+                Poll::Ready(Err(oneshot::Canceled)) => panic!(),
+                Poll::Ready(Ok(effect)) => {
+                    return Poll::Ready(ReturnedEffect { ret: effect.ret });
+                }
+                Poll::Pending => {}
             }
-        };
+            Poll::Pending
+        })
+        .await;
 
-        effect_from_actor
+        let t = handler(&mut effect).await;
+
+        let effect_to_actor = ReturnedEffectFromTestkitToActor { ret: effect.ret };
+        state
+            .returned_effect_sender
+            .take()
+            .unwrap()
+            .send(effect_to_actor)
+            .expect("could not send effect back to actor");
+
+        self.state = None;
+
+        t
     }
 }
 
@@ -353,8 +486,13 @@ impl AnyTestkit {
     }
 
     pub fn downcast_unwrap<M: 'static, Ret: 'static>(&mut self) -> Testkit<M, Ret> {
-        self.downcast()
-            .unwrap_or_else(|| panic!("testkit is not downcastable to {}", std::any::type_name::<M>()))
+        self.downcast().unwrap_or_else(|| {
+            panic!(
+                "testkit is not downcastable to Testkit<{}, {}>",
+                std::any::type_name::<M>(),
+                std::any::type_name::<Ret>()
+            )
+        })
     }
 }
 
@@ -436,8 +574,7 @@ mod tests {
         assert!(actor_ref.try_send(NonClone).is_ok());
 
         let _ = testkit
-            .test_next_effect(async |effect| {
-                let _ = effect.unwrap();
+            .expect_recv_effect(async |_| {
                 tracing::info!("effect received; sleeping");
                 tokio::time::sleep(Duration::from_millis(1000)).await;
             })
@@ -445,10 +582,14 @@ mod tests {
             .await;
 
         let _ = testkit
-            .test_next_effect(async |effect| {
-                let _ = effect.unwrap();
+            .expect_recv_effect(async |_| {
                 tracing::info!("effect received");
             })
+            .instrument(info_span!("testkit"))
+            .await;
+
+        let _ = testkit
+            .expect_returned_effect(async |_| {})
             .instrument(info_span!("testkit"))
             .await;
 
@@ -486,9 +627,9 @@ mod tests {
         let _ = actor_ref.try_send(2);
 
         let _ = testkit
-            .expect_recv_effect(async |mut effect| {
+            .expect_recv_effect(async |effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
-                assert_eq!(**m, 1);
+                assert_eq!(*m, 1);
                 tracing::info!("discarding 1");
                 effect.discard();
             })
@@ -498,8 +639,13 @@ mod tests {
         let _ = testkit
             .expect_recv_effect(async |effect| {
                 let m = effect.recv.as_ref().into_message().unwrap();
-                assert_eq!(**m, 2);
+                assert_eq!(*m, 2);
             })
+            .instrument(info_span!("testkit"))
+            .await;
+
+        let _ = testkit
+            .expect_returned_effect(async |_| {})
             .instrument(info_span!("testkit"))
             .await;
 

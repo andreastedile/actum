@@ -6,7 +6,7 @@ pub mod test_actor;
 
 pub struct ActorCell<D, Ret> {
     pub(crate) tracker: Option<ChildrenTracker>,
-    dependency: D,
+    pub(crate) dependency: D,
     _ret: PhantomData<Ret>,
 }
 

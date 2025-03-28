@@ -1,7 +1,9 @@
+use crate::actor_cell::test_actor::TestExtension;
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::ActorRef;
 use crate::actor_ref::MessageReceiver;
 use crate::children_tracker::WakeParentOnDrop;
+use crate::effect::returned_effect::ReturnedEffectFromActorToTestkit;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -40,13 +42,12 @@ impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
     }
 }
 
-impl<M, F, Fut, Ret, D> RunTask<Ret> for ActorTask<M, F, Fut, Ret, D>
+impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret, ()>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<D, Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<D, Ret>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<(), Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<(), Ret>, Ret)> + Send + 'static,
     Ret: Send + 'static,
-    D: Send + 'static,
 {
     async fn run_task(self) -> Ret {
         let f = self.f;
@@ -59,5 +60,39 @@ where
         }
 
         ret
+    }
+}
+
+impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret, TestExtension<M, Ret>>
+where
+    M: Send + 'static,
+    F: FnOnce(ActorCell<TestExtension<M, Ret>, Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<TestExtension<M, Ret>, Ret>, Ret)> + Send + 'static,
+    Ret: Send + 'static,
+{
+    async fn run_task(self) -> Ret {
+        let f = self.f;
+        let fut = f(self.cell, self.receiver, self.actor_ref);
+        let (mut cell, ret) = fut.await;
+
+        if let Some(tracker) = cell.tracker.take() {
+            tracing::trace!("joining children");
+            tracker.join_all().await;
+        }
+
+        let extension = cell.dependency;
+
+        let effect_out = ReturnedEffectFromActorToTestkit { ret };
+        extension
+            .returned_effect_sender
+            .send(effect_out)
+            .expect("could not send the effect to the testkit");
+
+        let effect_in = extension
+            .returned_effect_receiver
+            .await
+            .expect("could not receive effect back from the testkit");
+
+        effect_in.ret
     }
 }

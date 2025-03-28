@@ -1,36 +1,26 @@
 pub mod recv_effect;
+pub mod returned_effect;
 pub mod spawn_effect;
 
-use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit};
-use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit};
+use crate::effect::recv_effect::RecvEffect;
+use crate::effect::returned_effect::ReturnedEffect;
+use crate::effect::spawn_effect::SpawnEffect;
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
 #[derive(EnumAsInner)]
-pub enum Effect<'a, M> {
-    Recv(RecvEffect<'a, M>),
+pub enum Effect<M, Ret> {
+    Recv(RecvEffect<M>),
     Spawn(SpawnEffect),
+    Returned(ReturnedEffect<Ret>),
 }
 
-impl<M> Debug for Effect<'_, M> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Effect::Recv(inner) => inner.fmt(f),
-            Effect::Spawn(inner) => inner.fmt(f),
-        }
-    }
-}
-
-pub enum EffectFromActorToTestkit<M> {
-    Recv(RecvEffectFromActorToTestkit<M>),
-    Spawn(SpawnEffectFromActorToTestkit),
-}
-
-impl<M> Debug for EffectFromActorToTestkit<M> {
+impl<M, Ret> Debug for Effect<M, Ret> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Recv(inner) => inner.fmt(f),
             Self::Spawn(inner) => inner.fmt(f),
+            Self::Returned(inner) => inner.fmt(f),
         }
     }
 }
