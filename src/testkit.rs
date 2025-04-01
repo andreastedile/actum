@@ -8,7 +8,9 @@ use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvE
 use crate::effect::returned_effect::{
     ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor,
 };
-use crate::effect::spawn_effect::{UntypedSpawnEffect, SpawnEffectFromTestkitToActor, UntypedSpawnEffectFromActorToTestkit};
+use crate::effect::spawn_effect::{
+    SpawnEffectFromTestkitToActor, UntypedSpawnEffect, UntypedSpawnEffectFromActorToTestkit,
+};
 use crate::effect::Effect;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -308,8 +310,8 @@ impl<M, Ret> Testkit<M, Ret> {
     ///     let handle = tokio::spawn(task.run_task());
     ///
     ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
-    ///         let testkit = effect.downcast_unwrap::<u32, ()>();
-    ///         testkit
+    ///         let effect = effect.downcast_unwrap::<u32, ()>();
+    ///         effect.testkit
     ///     }).await;
     ///
     ///     child_tk.expect_returned_effect(async |_| {}).await;

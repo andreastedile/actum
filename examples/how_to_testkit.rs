@@ -65,8 +65,8 @@ async fn test() {
 
     let mut child_tk = parent_tk
         .expect_spawn_effect(async |mut effect| {
-            let testkit = effect.downcast_unwrap::<u64, u64>();
-            testkit
+            let effect = effect.downcast_unwrap::<u64, u64>();
+            effect.testkit
         })
         .await;
 
