@@ -4,14 +4,14 @@ pub mod spawn_effect;
 
 use crate::effect::recv_effect::RecvEffect;
 use crate::effect::returned_effect::ReturnedEffect;
-use crate::effect::spawn_effect::SpawnEffect;
+use crate::effect::spawn_effect::UntypedSpawnEffect;
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
 #[derive(EnumAsInner)]
 pub enum Effect<M, Ret> {
     Recv(RecvEffect<M>),
-    Spawn(SpawnEffect),
+    Spawn(UntypedSpawnEffect),
     Returned(ReturnedEffect<Ret>),
 }
 

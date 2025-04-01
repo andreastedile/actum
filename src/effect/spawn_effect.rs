@@ -1,17 +1,17 @@
 use crate::testkit::{AnyTestkit, Testkit};
 use std::fmt::{Debug, Formatter};
 
-pub struct SpawnEffect {
+pub struct UntypedSpawnEffect {
     pub(crate) any_testkit: Option<AnyTestkit>,
 }
 
-impl Debug for SpawnEffect {
+impl Debug for UntypedSpawnEffect {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Testkit")
     }
 }
 
-impl SpawnEffect {
+impl UntypedSpawnEffect {
     pub fn downcast<M: 'static, Ret: 'static>(&mut self) -> Option<Testkit<M, Ret>> {
         self.any_testkit.take().unwrap().downcast::<M, Ret>()
     }
@@ -21,11 +21,11 @@ impl SpawnEffect {
     }
 }
 
-pub struct SpawnEffectFromActorToTestkit {
+pub struct UntypedSpawnEffectFromActorToTestkit {
     pub any_testkit: AnyTestkit,
 }
 
-impl Debug for SpawnEffectFromActorToTestkit {
+impl Debug for UntypedSpawnEffectFromActorToTestkit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpawnEffect")
             .field("any_testkit", &self.any_testkit)

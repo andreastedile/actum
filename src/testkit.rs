@@ -8,7 +8,7 @@ use crate::effect::recv_effect::{RecvEffect, RecvEffectFromActorToTestkit, RecvE
 use crate::effect::returned_effect::{
     ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor,
 };
-use crate::effect::spawn_effect::{SpawnEffect, SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
+use crate::effect::spawn_effect::{UntypedSpawnEffect, SpawnEffectFromTestkitToActor, UntypedSpawnEffectFromActorToTestkit};
 use crate::effect::Effect;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -20,7 +20,7 @@ use std::task::Poll;
 pub fn create_testkit_pair<M, Ret>() -> (TestExtension<M, Ret>, Testkit<M, Ret>) {
     let recv_effect_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
-    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<SpawnEffectFromActorToTestkit>(1);
+    let spawn_effect_actor_to_testkit_channel = mpsc::channel::<UntypedSpawnEffectFromActorToTestkit>(1);
     let spawn_effect_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
     let returned_effect_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
     let returned_effect_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
@@ -59,7 +59,7 @@ impl<M, Ret> Debug for Testkit<M, Ret> {
 pub struct TestkitState<M, Ret> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-    spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
+    spawn_effect_receiver: mpsc::Receiver<UntypedSpawnEffectFromActorToTestkit>,
     spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
     returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
     returned_effect_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>>,
@@ -69,7 +69,7 @@ impl<M, Ret> Testkit<M, Ret> {
     pub const fn new(
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-        spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromActorToTestkit>,
+        spawn_effect_receiver: mpsc::Receiver<UntypedSpawnEffectFromActorToTestkit>,
         spawn_effect_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
         returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
         returned_effect_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>,
@@ -114,7 +114,7 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.spawn_effect_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(Effect::Spawn(SpawnEffect {
+                    return Poll::Ready(Effect::Spawn(UntypedSpawnEffect {
                         any_testkit: Some(effect.any_testkit),
                     }));
                 }
@@ -267,7 +267,7 @@ impl<M, Ret> Testkit<M, Ret> {
         t
     }
 
-    /// Receives a [SpawnEffect] from the actor under test and evaluates it with the provided closure.
+    /// Receives a [UntypedSpawnEffect] from the actor under test and evaluates it with the provided closure.
     ///
     /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
@@ -319,7 +319,7 @@ impl<M, Ret> Testkit<M, Ret> {
     /// }
     /// ```
     #[must_use]
-    pub async fn expect_spawn_effect<T>(&mut self, handler: impl AsyncFnOnce(SpawnEffect) -> T) -> T
+    pub async fn expect_spawn_effect<T>(&mut self, handler: impl AsyncFnOnce(UntypedSpawnEffect) -> T) -> T
     where
         M: Send + 'static,
         Ret: Send + 'static,
@@ -337,7 +337,7 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.spawn_effect_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(SpawnEffect {
+                    return Poll::Ready(UntypedSpawnEffect {
                         any_testkit: Some(effect.any_testkit),
                     });
                 }

@@ -6,7 +6,7 @@ use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
-use crate::effect::spawn_effect::{SpawnEffectFromActorToTestkit, SpawnEffectFromTestkitToActor};
+use crate::effect::spawn_effect::{SpawnEffectFromTestkitToActor, UntypedSpawnEffectFromActorToTestkit};
 use crate::testkit::create_testkit_pair;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -23,7 +23,7 @@ pub struct TestExtension<M, Ret> {
     state: RecvFutureStateMachine,
 
     /// used to send spawn effects from the actor under test to the corresponding testkit.
-    spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit>,
+    spawn_effect_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
     /// used to receive spawn effects from the testkit to the actor.
     spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
 
@@ -39,7 +39,7 @@ impl<M, Ret> TestExtension<M, Ret> {
     pub const fn new(
         recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
-        spawn_effect_sender: mpsc::Sender<SpawnEffectFromActorToTestkit>,
+        spawn_effect_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
         spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
         returned_effect_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
         returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
@@ -197,7 +197,7 @@ where
         let tracker = self.tracker.get_or_insert_default();
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
 
-        let spawn_effect_to_testkit = SpawnEffectFromActorToTestkit {
+        let spawn_effect_to_testkit = UntypedSpawnEffectFromActorToTestkit {
             any_testkit: testkit.into(),
         };
 
