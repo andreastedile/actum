@@ -11,7 +11,7 @@ use std::fmt::{Debug, Formatter};
 #[derive(EnumAsInner)]
 pub enum Effect<'a, M, Ret> {
     Recv(RecvEffect<'a, M>),
-    Spawn(UntypedSpawnEffect),
+    Spawn(UntypedSpawnEffect<'a>),
     Returned(ReturnedEffect<'a, Ret>),
 }
 

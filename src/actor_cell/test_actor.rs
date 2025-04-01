@@ -2,7 +2,7 @@ use crate::actor::{Actor, Recv};
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::MessageReceiver;
 use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
-use crate::actor_task::ActorTask;
+use crate::actor_task::{ActorInner, ActorTask};
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
@@ -10,6 +10,7 @@ use crate::effect::spawn_effect::{SpawnEffectFromTestkitToActor, UntypedSpawnEff
 use crate::testkit::create_testkit_pair;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
+use std::any::Any;
 use std::future::{poll_fn, Future};
 use std::marker::PhantomData;
 use std::task::{ready, Poll};
@@ -102,6 +103,24 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
+pub(crate) struct UntypedTestExtension(Box<dyn Any + Send>);
+
+impl<M, Ret> From<TestExtension<M, Ret>> for UntypedTestExtension
+where
+    M: Send + 'static,
+    Ret: Send + 'static,
+{
+    fn from(extension: TestExtension<M, Ret>) -> Self {
+        Self(Box::new(extension))
+    }
+}
+
+impl UntypedTestExtension {
+    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> TestExtension<M, Ret> {
+        *self.0.downcast::<TestExtension<M, Ret>>().unwrap()
+    }
+}
+
 impl<M, Ret> Actor<M, Ret> for ActorCell<TestExtension<M, Ret>, Ret>
 where
     M: Send + 'static,
@@ -110,7 +129,7 @@ where
     type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = TestExtension<M2, Ret2>;
     type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<TestExtension<M2, Ret2>, Ret2>;
     type HasRunTask<M2, F, Fut, Ret2>
-        = ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>
+        = ActorTask<M2, ActorInner<F, M2, Ret2>, Fut, Ret2, TestExtension<M2, Ret2>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<TestExtension<M2, Ret2>, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -180,7 +199,7 @@ where
     async fn create_child<M2, F, Fut, Ret2>(
         &mut self,
         f: F,
-    ) -> ActorToSpawn<M2, ActorTask<M2, F, Fut, Ret2, TestExtension<M2, Ret2>>>
+    ) -> ActorToSpawn<M2, ActorTask<M2, ActorInner<F, M2, Ret2>, Fut, Ret2, TestExtension<M2, Ret2>>>
     where
         M2: Send + 'static,
         F: FnOnce(ActorCell<TestExtension<M2, Ret2>, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
@@ -195,7 +214,13 @@ where
         let cell = ActorCell::new(extension);
 
         let tracker = self.tracker.get_or_insert_default();
-        let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
+        let mut task = ActorTask::new(
+            ActorInner::Unboxed(f),
+            cell,
+            receiver,
+            actor_ref.clone(),
+            Some(tracker.make_child()),
+        );
 
         let spawn_effect_to_testkit = UntypedSpawnEffectFromActorToTestkit {
             untyped_testkit: testkit.into(),
@@ -206,12 +231,19 @@ where
             .try_send(spawn_effect_to_testkit)
             .expect("could not send the effect to the testkit");
 
-        let _ = self
+        let spawn_effect_from_actor = self
             .dependency
             .spawn_effect_receiver
             .next()
             .await
             .expect("could not receive the effect back from the testkit");
+
+        if let Some(inner) = spawn_effect_from_actor.injected {
+            let actor = inner.actor.downcast_unwrap::<M2, Ret2>();
+            let extension = inner.extension.downcast_unwrap::<M2, Ret2>();
+            task.f = ActorInner::Boxed(actor);
+            task.cell = ActorCell::new(extension);
+        };
 
         ActorToSpawn::new(task, actor_ref)
     }

@@ -1,7 +1,7 @@
 use crate::actor_cell::test_actor::TestExtension;
 use crate::actor_cell::ActorCell;
 use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
-use crate::actor_task::ActorTask;
+use crate::actor_task::{ActorInner, ActorTask};
 
 use crate::actor_ref::MessageReceiver;
 use crate::effect::recv_effect::{
@@ -120,6 +120,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 Poll::Ready(Some(effect)) => {
                     return Poll::Ready(EffectImpl::Spawn(UntypedSpawnEffectImpl {
                         untyped_testkit: Some(effect.untyped_testkit),
+                        injected: None,
                     }));
                 }
                 Poll::Pending => {}
@@ -142,6 +143,7 @@ impl<M, Ret> Testkit<M, Ret> {
             }),
             EffectImpl::Spawn(effect) => Effect::Spawn(UntypedSpawnEffect {
                 untyped_testkit: effect.untyped_testkit.take().unwrap(),
+                injected: &mut effect.injected,
             }),
             EffectImpl::Returned(effect) => Effect::Returned(ReturnedEffect { ret: &effect.ret }),
         };
@@ -159,8 +161,10 @@ impl<M, Ret> Testkit<M, Ret> {
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-            EffectImpl::Spawn(_) => {
-                let effect_to_actor = SpawnEffectFromTestkitToActor;
+            EffectImpl::Spawn(inner) => {
+                let effect_to_actor = SpawnEffectFromTestkitToActor {
+                    injected: inner.injected,
+                };
                 state
                     .spawn_effect_sender
                     .try_send(effect_to_actor)
@@ -307,9 +311,7 @@ impl<M, Ret> Testkit<M, Ret> {
     /// where
     ///     A: Actor<u64, ()>,
     /// {
-    ///     println!("got here");
     ///     let child = cell.create_child(child).await;
-    ///     tracing::trace!("there");
     ///     let handle = tokio::spawn(child.task.run_task());
     ///     handle.await.unwrap();
     ///     (cell, ())
@@ -359,6 +361,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 Poll::Ready(Some(effect)) => {
                     return Poll::Ready(UntypedSpawnEffectImpl {
                         untyped_testkit: Some(effect.untyped_testkit),
+                        injected: None,
                     });
                 }
                 Poll::Pending => {}
@@ -376,11 +379,14 @@ impl<M, Ret> Testkit<M, Ret> {
 
         let effect = UntypedSpawnEffect {
             untyped_testkit: effect_impl.untyped_testkit.take().unwrap(),
+            injected: &mut effect_impl.injected,
         };
 
         let t = handler(effect).await;
 
-        let effect_to_actor = SpawnEffectFromTestkitToActor;
+        let effect_to_actor = SpawnEffectFromTestkitToActor {
+            injected: effect_impl.injected,
+        };
         state
             .spawn_effect_sender
             .try_send(effect_to_actor)
@@ -518,7 +524,7 @@ pub struct ActumWithTestkit<M, RT, Ret> {
 
 pub fn actum_with_testkit<M, F, Fut, Ret>(
     f: F,
-) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret, TestExtension<M, Ret>>, Ret>
+) -> ActumWithTestkit<M, ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret, TestExtension<M, Ret>>, Ret>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<TestExtension<M, Ret>, Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -530,7 +536,7 @@ where
     let (extension, testkit) = create_testkit_pair::<M, Ret>();
 
     let cell = ActorCell::<TestExtension<M, Ret>, Ret>::new(extension);
-    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
+    let task = ActorTask::new(ActorInner::Unboxed(f), cell, receiver, actor_ref.clone(), None);
 
     ActumWithTestkit {
         task,
