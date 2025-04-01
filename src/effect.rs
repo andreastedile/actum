@@ -2,20 +2,20 @@ pub mod recv_effect;
 pub mod returned_effect;
 pub mod spawn_effect;
 
-use crate::effect::recv_effect::RecvEffect;
-use crate::effect::returned_effect::ReturnedEffect;
-use crate::effect::spawn_effect::UntypedSpawnEffect;
+use crate::effect::recv_effect::{RecvEffect, RecvEffectImpl};
+use crate::effect::returned_effect::{ReturnedEffect, ReturnedEffectImpl};
+use crate::effect::spawn_effect::{UntypedSpawnEffect, UntypedSpawnEffectImpl};
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
 #[derive(EnumAsInner)]
-pub enum Effect<M, Ret> {
-    Recv(RecvEffect<M>),
+pub enum Effect<'a, M, Ret> {
+    Recv(RecvEffect<'a, M>),
     Spawn(UntypedSpawnEffect),
-    Returned(ReturnedEffect<Ret>),
+    Returned(ReturnedEffect<'a, Ret>),
 }
 
-impl<M, Ret> Debug for Effect<M, Ret> {
+impl<'a, M, Ret> Debug for Effect<'a, M, Ret> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Recv(inner) => inner.fmt(f),
@@ -23,4 +23,10 @@ impl<M, Ret> Debug for Effect<M, Ret> {
             Self::Returned(inner) => inner.fmt(f),
         }
     }
+}
+
+pub(crate) enum EffectImpl<M, Ret> {
+    Recv(RecvEffectImpl<M>),
+    Spawn(UntypedSpawnEffectImpl),
+    Returned(ReturnedEffectImpl<Ret>),
 }

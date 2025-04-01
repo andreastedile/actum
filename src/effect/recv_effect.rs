@@ -1,24 +1,41 @@
 use crate::actor::Recv;
 use std::fmt::{Debug, Formatter};
 
-pub struct RecvEffect<M> {
+pub(crate) struct RecvEffectImpl<M> {
     pub recv: Recv<M>,
-    pub(crate) discarded: bool,
+    pub discarded: bool,
 }
 
-impl<M> Debug for RecvEffect<M> {
+impl<M> Debug for RecvEffectImpl<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.recv.fmt(f)
+        f.debug_struct("RecvEffect")
+            .field("recv", &self.recv)
+            .field("discarded", &self.discarded)
+            .finish()
     }
 }
 
-impl<M> RecvEffect<M> {
-    pub fn discard(&mut self) {
-        self.discarded = true;
+pub struct RecvEffect<'a, M> {
+    pub recv: &'a Recv<M>,
+    pub discarded: &'a mut bool,
+}
+
+impl<'a, M> Debug for RecvEffect<'a, M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecvEffect")
+            .field("recv", self.recv)
+            .field("discarded", self.discarded)
+            .finish()
     }
 }
 
-pub struct RecvEffectFromActorToTestkit<M> {
+impl<'a, M> RecvEffect<'a, M> {
+    pub const fn discard(&mut self) {
+        *self.discarded = true;
+    }
+}
+
+pub(crate) struct RecvEffectFromActorToTestkit<M> {
     pub recv: Recv<M>,
 }
 
@@ -28,7 +45,7 @@ impl<M> Debug for RecvEffectFromActorToTestkit<M> {
     }
 }
 
-pub struct RecvEffectFromTestkitToActor<M> {
+pub(crate) struct RecvEffectFromTestkitToActor<M> {
     pub recv: Recv<M>,
     pub discarded: bool,
 }

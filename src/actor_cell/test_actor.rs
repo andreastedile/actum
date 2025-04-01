@@ -16,7 +16,7 @@ use std::task::{ready, Poll};
 
 pub struct TestExtension<M, Ret> {
     /// used to send recv effects from the actor under test to the corresponding testkit.
-    pub recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
+    pub(crate) recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     /// used to receive recv effects from the testkit to the actor.
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
 
@@ -36,7 +36,7 @@ pub struct TestExtension<M, Ret> {
 }
 
 impl<M, Ret> TestExtension<M, Ret> {
-    pub const fn new(
+    pub(crate) const fn new(
         recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
         recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
         spawn_effect_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
@@ -198,7 +198,7 @@ where
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker.make_child()));
 
         let spawn_effect_to_testkit = UntypedSpawnEffectFromActorToTestkit {
-            any_testkit: testkit.into(),
+            untyped_testkit: testkit.into(),
         };
 
         self.dependency

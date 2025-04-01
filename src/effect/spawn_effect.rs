@@ -1,34 +1,43 @@
-use crate::testkit::{AnyTestkit, Testkit};
+use crate::testkit::{Testkit, UntypedTestkit};
 use std::fmt::{Debug, Formatter};
 
-pub struct UntypedSpawnEffect {
-    pub(crate) any_testkit: Option<AnyTestkit>,
+pub(crate) struct UntypedSpawnEffectImpl {
+    /// Wrapped in Option so that it can be taken.
+    pub untyped_testkit: Option<UntypedTestkit>,
 }
 
-impl Debug for UntypedSpawnEffect {
+impl Debug for UntypedSpawnEffectImpl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UntypedSpawnEffect")
-            .field("testkit", &self.any_testkit)
+        f.debug_struct("SpawnEffect")
+            .field("untyped_testkit", &self.untyped_testkit)
             .finish()
     }
 }
 
+pub struct UntypedSpawnEffect {
+    pub untyped_testkit: UntypedTestkit,
+}
+
+impl Debug for UntypedSpawnEffect {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("UntypedSpawnEffect")
+    }
+}
+
 impl UntypedSpawnEffect {
-    pub fn downcast<M: 'static, Ret: 'static>(&mut self) -> Option<SpawnEffect<M, Ret>> {
-        if let Some(mut any_testkit) = self.any_testkit.take() {
-            if let Some(testkit) = any_testkit.downcast::<M, Ret>() {
-                Some(SpawnEffect { testkit })
-            } else {
-                None
+    pub fn downcast<M: 'static, Ret: 'static>(mut self) -> Result<SpawnEffect<M, Ret>, Self> {
+        match self.untyped_testkit.downcast::<M, Ret>() {
+            Ok(testkit) => Ok(SpawnEffect { testkit }),
+            Err(untyped_testkit) => {
+                self.untyped_testkit = untyped_testkit;
+                Err(self)
             }
-        } else {
-            None
         }
     }
 
-    pub fn downcast_unwrap<M: 'static, Ret: 'static>(&mut self) -> SpawnEffect<M, Ret> {
+    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> SpawnEffect<M, Ret> {
         SpawnEffect {
-            testkit: self.any_testkit.take().unwrap().downcast_unwrap::<M, Ret>(),
+            testkit: self.untyped_testkit.downcast::<M, Ret>().unwrap(),
         }
     }
 }
@@ -43,19 +52,19 @@ impl<M, Ret> Debug for SpawnEffect<M, Ret> {
     }
 }
 
-pub struct UntypedSpawnEffectFromActorToTestkit {
-    pub any_testkit: AnyTestkit,
+pub(crate) struct UntypedSpawnEffectFromActorToTestkit {
+    pub untyped_testkit: UntypedTestkit,
 }
 
 impl Debug for UntypedSpawnEffectFromActorToTestkit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpawnEffect")
-            .field("any_testkit", &self.any_testkit)
+            .field("testkit", &self.untyped_testkit)
             .finish()
     }
 }
 
-pub struct SpawnEffectFromTestkitToActor;
+pub(crate) struct SpawnEffectFromTestkitToActor;
 
 impl Debug for SpawnEffectFromTestkitToActor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

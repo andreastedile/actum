@@ -1,16 +1,20 @@
 use std::fmt::{Debug, Formatter};
 
-pub struct ReturnedEffect<Ret> {
+pub(crate) struct ReturnedEffectImpl<Ret> {
     pub ret: Ret,
 }
 
-impl<Ret> Debug for ReturnedEffect<Ret> {
+pub struct ReturnedEffect<'a, Ret> {
+    pub ret: &'a Ret,
+}
+
+impl<'a, Ret> Debug for ReturnedEffect<'a, Ret> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ReturnedEffect")
+        f.debug_struct("ReturnedEffect").finish_non_exhaustive()
     }
 }
 
-pub struct ReturnedEffectFromActorToTestkit<Ret> {
+pub(crate) struct ReturnedEffectFromActorToTestkit<Ret> {
     pub ret: Ret,
 }
 
@@ -20,11 +24,11 @@ impl<Ret> Debug for ReturnedEffectFromActorToTestkit<Ret> {
     }
 }
 
-pub struct ReturnedEffectFromTestkitToActor<Ret> {
+pub(crate) struct ReturnedEffectFromTestkitToActor<Ret> {
     pub ret: Ret,
 }
 
-impl<M> Debug for ReturnedEffectFromTestkitToActor<M> {
+impl<Ret> Debug for ReturnedEffectFromTestkitToActor<Ret> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ReturnedEffect").finish_non_exhaustive()
     }
