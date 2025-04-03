@@ -25,7 +25,7 @@ pub struct ActorTask<M, F, Fut, Ret, D> {
 }
 
 impl<M, F, Fut, Ret, D> ActorTask<M, F, Fut, Ret, D> {
-    pub const fn new(
+    pub(crate) const fn new(
         f: F,
         cell: ActorCell<D, Ret>,
         receiver: MessageReceiver<M>,
@@ -118,7 +118,7 @@ where
 pub type BoxTestActor<M, Ret> =
     Box<dyn FnOnce(ActorCell<TestExtension<M, Ret>, Ret>, MessageReceiver<M>, ActorRef<M>) -> BoxFuture<'static, (ActorCell<TestExtension<M, Ret>, Ret>, Ret)> + Send + 'static>;
 
-pub struct UntypedBoxTestActor(Box<dyn Any + Send>);
+pub(crate) struct UntypedBoxTestActor(Box<dyn Any + Send>);
 
 impl<M, Ret> From<BoxTestActor<M, Ret>> for UntypedBoxTestActor
 where

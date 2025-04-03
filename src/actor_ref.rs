@@ -4,30 +4,34 @@ use futures::StreamExt;
 use std::future::{poll_fn, Future};
 use std::task::Poll;
 
-pub struct ActorRef<M>(mpsc::Sender<M>);
+pub struct ActorRef<M> {
+    m_sender: mpsc::Sender<M>,
+}
 
 impl<M> Clone for ActorRef<M> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            m_sender: self.m_sender.clone(),
+        }
     }
 }
 
 impl<M> PartialEq<Self> for ActorRef<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.same_receiver(&other.0)
+        self.m_sender.same_receiver(&other.m_sender)
     }
 }
 
 impl<M> Eq for ActorRef<M> {}
 
 impl<M> ActorRef<M> {
-    pub const fn new(m_sender: mpsc::Sender<M>) -> Self {
-        Self(m_sender)
+    pub(crate) const fn new(m_sender: mpsc::Sender<M>) -> Self {
+        Self { m_sender }
     }
 
     /// Attempt to send a message to this actor, returning the message if there was an error.
     pub fn try_send(&mut self, message: M) -> Result<(), M> {
-        self.0.try_send(message).map_err(mpsc::TrySendError::into_inner)
+        self.m_sender.try_send(message).map_err(mpsc::TrySendError::into_inner)
     }
 }
 
@@ -44,12 +48,12 @@ impl<M> MessageReceiver<M> {
         poll_fn(|cx| match self.m_receiver.poll_next_unpin(cx) {
             Poll::Ready(None) => Poll::Ready(Recv::NoMoreSenders),
             Poll::Ready(Some(m)) => Poll::Ready(Recv::Message(m)),
-            Poll::Pending => return Poll::Pending,
+            Poll::Pending => Poll::Pending,
         })
     }
 }
 
-pub fn create_actor_ref_and_message_receiver<M>() -> (ActorRef<M>, MessageReceiver<M>) {
+pub(crate) fn create_actor_ref_and_message_receiver<M>() -> (ActorRef<M>, MessageReceiver<M>) {
     let (m_sender, m_receiver) = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::<M>::new(m_sender);
     let receiver = MessageReceiver::<M>::new(m_receiver);

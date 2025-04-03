@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 #[derive(Default)]
-pub struct ChildrenTracker(Option<Arc<ChildrenState>>);
+pub(crate) struct ChildrenTracker(Option<Arc<ChildrenState>>);
 
 impl ChildrenTracker {
     pub fn make_child(&mut self) -> WakeParentOnDrop {
@@ -28,7 +28,7 @@ impl ChildrenTracker {
     }
 }
 
-pub struct WakeParentOnDrop(Arc<ChildrenState>);
+pub(crate) struct WakeParentOnDrop(Arc<ChildrenState>);
 
 impl Drop for WakeParentOnDrop {
     fn drop(&mut self) {

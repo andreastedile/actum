@@ -60,7 +60,7 @@ impl<M, Ret> Debug for Testkit<M, Ret> {
     }
 }
 
-pub struct TestkitState<M, Ret> {
+struct TestkitState<M, Ret> {
     recv_effect_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
     spawn_effect_receiver: mpsc::Receiver<UntypedSpawnEffectFromActorToTestkit>,
