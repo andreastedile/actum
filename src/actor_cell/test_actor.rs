@@ -126,7 +126,6 @@ where
     M: Send + 'static,
     Ret: Send + 'static,
 {
-    type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = TestExtension<M2, Ret2>;
     type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<TestExtension<M2, Ret2>, Ret2>;
     type HasRunTask<M2, F, Fut, Ret2>
         = ActorTask<M2, ActorInner<F, M2, Ret2>, Fut, Ret2, TestExtension<M2, Ret2>>

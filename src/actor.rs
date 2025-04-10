@@ -11,10 +11,6 @@ where
     M: Send + 'static,
     Ret: Send + 'static,
 {
-    type ChildActorDependency<M2, Ret2>: Send + 'static
-    where
-        M2: Send + 'static,
-        Ret2: Send + 'static;
     type ChildActor<M2, Ret2>: Actor<M2, Ret2>
     where
         M2: Send + 'static,

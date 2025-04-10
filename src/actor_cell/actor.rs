@@ -11,7 +11,6 @@ where
     M: Send + 'static,
     Ret: Send + 'static,
 {
-    type ChildActorDependency<M2: Send + 'static, Ret2: Send + 'static> = ();
     type ChildActor<M2: Send + 'static, Ret2: Send + 'static> = ActorCell<(), Ret2>;
     type HasRunTask<M2, F, Fut, Ret2>
         = ActorTask<M2, F, Fut, Ret2, ()>
