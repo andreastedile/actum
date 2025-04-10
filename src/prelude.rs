@@ -1,3 +1,4 @@
+pub use crate::ActumWithTestkit;
 pub use crate::actor_ref::ActorRef;
 pub use crate::actor_task::RunTask;
 pub use crate::actor_to_spawn::ActorToSpawn;
@@ -11,5 +12,4 @@ pub use crate::effect::recv_effect::RecvEffect;
 pub use crate::effect::returned_effect::ReturnedEffect;
 pub use crate::receive_message::ReceiveMessage;
 pub use crate::receive_message::Recv;
-pub use crate::testkit::ActumWithTestkit;
 pub use crate::testkit::Testkit;

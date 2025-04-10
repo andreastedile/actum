@@ -1,4 +1,3 @@
-use crate::actor_ref::ActorRef;
 use crate::effect::create_child_effect::{
     CreateChildEffectFromTestkitToActor, UntypedCreateChildEffect, UntypedCreateChildEffectFromActorToTestkit,
     UntypedCreateChildEffectImpl,
@@ -91,7 +90,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 .next()
                 .poll_unpin(cx)
             {
-                Poll::Ready(None) => panic!(),
+                Poll::Ready(None) => { /* ActorCell has dropped */ }
                 Poll::Ready(Some(effect)) => {
                     return Poll::Ready(EffectImpl::CreateChild(UntypedCreateChildEffectImpl {
                         untyped_testkit: Some(effect.untyped_testkit),
@@ -101,7 +100,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 Poll::Pending => {}
             }
             match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
-                Poll::Ready(Err(oneshot::Canceled)) => panic!(),
+                Poll::Ready(Err(oneshot::Canceled)) => panic!("ActorTask did not send ReturnedEffect"),
                 Poll::Ready(Ok(effect)) => {
                     return Poll::Ready(EffectImpl::Returned(ReturnedEffectImpl { ret: effect.ret }));
                 }
@@ -127,32 +126,44 @@ impl<M, Ret> Testkit<M, Ret> {
 
         match effect_impl {
             EffectImpl::Recv(inner) => {
-                let effect_to_actor = RecvEffectFromTestkitToActor {
+                let recv_effect_from_testkit_to_actor = RecvEffectFromTestkitToActor {
                     recv: inner.recv,
                     discarded: inner.discarded,
                 };
-                state
+                if state
                     .recv_effect_from_testkit_to_actor_sender
-                    .try_send(effect_to_actor)
-                    .expect("could not send effect back to actor");
+                    .try_send(recv_effect_from_testkit_to_actor)
+                    .is_err()
+                {
+                    // MessageReceiver has dropped.
+                    // This is possible because it is passed by value to the actor closure.
+                    // This means that the actor will not see this message and
+                    // will lose the ability to receive new messages.
+                }
             }
             EffectImpl::CreateChild(inner) => {
-                let effect_to_actor = CreateChildEffectFromTestkitToActor {
+                let create_child_effect_from_testkit_to_actor = CreateChildEffectFromTestkitToActor {
                     injected: inner.injected,
                 };
-                state
+                if state
                     .create_child_effect_from_testkit_to_actor_sender
-                    .try_send(effect_to_actor)
-                    .expect("could not send effect back to actor");
+                    .try_send(create_child_effect_from_testkit_to_actor)
+                    .is_err()
+                {
+                    // ActorCell has dropped.
+                    // This is possible because it is passed by value to the actor closure.
+                    // This means that the actor will not be able to create this child actor and
+                    // will lose the ability to create new child actors.
+                }
             }
             EffectImpl::Returned(inner) => {
-                let effect_to_actor = ReturnedEffectFromTestkitToActor { ret: inner.ret };
+                let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { ret: inner.ret };
                 state
                     .returned_effect_from_testkit_to_actor_sender
                     .take()
                     .unwrap()
-                    .send(effect_to_actor)
-                    .expect("could not send effect back to actor");
+                    .send(returned_effect_from_testkit_to_actor)
+                    .expect("could not send effect back to ActorTask");
 
                 self.state = None;
             }
@@ -257,13 +268,13 @@ impl<M, Ret> Testkit<M, Ret> {
 
         let t = handler(effect).await;
 
-        let effect_to_actor = RecvEffectFromTestkitToActor {
+        let recv_effect_from_testkit_to_actor = RecvEffectFromTestkitToActor {
             recv: effect_impl.recv,
             discarded: effect_impl.discarded,
         };
         state
             .recv_effect_from_testkit_to_actor_sender
-            .try_send(effect_to_actor)
+            .try_send(recv_effect_from_testkit_to_actor)
             .expect("could not send effect back to actor");
 
         t
@@ -369,12 +380,12 @@ impl<M, Ret> Testkit<M, Ret> {
 
         let t = handler(effect).await;
 
-        let effect_to_actor = CreateChildEffectFromTestkitToActor {
+        let create_child_effect_from_testkit_to_actor = CreateChildEffectFromTestkitToActor {
             injected: effect_impl.injected,
         };
         state
             .create_child_effect_from_testkit_to_actor_sender
-            .try_send(effect_to_actor)
+            .try_send(create_child_effect_from_testkit_to_actor)
             .expect("could not send effect back to actor");
 
         t
@@ -457,12 +468,12 @@ impl<M, Ret> Testkit<M, Ret> {
 
         let t = handler(effect).await;
 
-        let effect_to_actor = ReturnedEffectFromTestkitToActor { ret: effect_impl.ret };
+        let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { ret: effect_impl.ret };
         state
             .returned_effect_from_testkit_to_actor_sender
             .take()
             .unwrap()
-            .send(effect_to_actor)
+            .send(returned_effect_from_testkit_to_actor)
             .expect("could not send effect back to actor");
 
         self.state = None;
@@ -502,12 +513,6 @@ impl UntypedTestkit {
     pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> Testkit<M, Ret> {
         *self.0.downcast::<Testkit<M, Ret>>().unwrap()
     }
-}
-
-pub struct ActumWithTestkit<M, RT, Ret> {
-    pub task: RT,
-    pub actor_ref: ActorRef<M>,
-    pub testkit: Testkit<M, Ret>,
 }
 
 #[cfg(test)]

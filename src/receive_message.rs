@@ -1,4 +1,5 @@
 use enum_as_inner::EnumAsInner;
+use futures::channel::mpsc;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 
@@ -37,5 +38,16 @@ impl<M> Recv<M> {
             Self::Message(message) => Recv::Message(message),
             Self::NoMoreSenders => Recv::NoMoreSenders,
         }
+    }
+}
+
+pub struct ExtendableMessageReceiver<M, D> {
+    pub(crate) m_receiver: mpsc::Receiver<M>,
+    pub(crate) dependency: D,
+}
+
+impl<M, D> ExtendableMessageReceiver<M, D> {
+    pub fn new(m_receiver: mpsc::Receiver<M>, dependency: D) -> Self {
+        Self { m_receiver, dependency }
     }
 }

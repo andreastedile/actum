@@ -1,9 +1,13 @@
-use crate::actor_ref::ExtendableMessageReceiver;
-use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
+use crate::actor_ref::ActorRef;
 use crate::actor_task::{ExtensibleActorTask, RunTask};
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::create_child::{ActorCell, CreateChild};
-use std::future::Future;
+use crate::prelude::{ReceiveMessage, Recv};
+use crate::receive_message::ExtendableMessageReceiver;
+use futures::StreamExt;
+use futures::channel::mpsc;
+use std::future::{Future, poll_fn};
+use std::task::Poll;
 
 impl CreateChild for ActorCell<()> {
     type MessageReceiverT<M2>
@@ -25,15 +29,15 @@ impl CreateChild for ActorCell<()> {
         Fut: Future<Output = (ActorCell<()>, Ret2)> + Send + 'static,
         Ret2: Send + 'static,
     {
-        let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
+        let m_channel = mpsc::channel::<M2>(100);
+        let actor_ref = ActorRef::new(m_channel.0);
+        let receiver = ExtendableMessageReceiver::new(m_channel.1, ());
 
-        let tracker = self.tracker.get_or_insert_default();
-        let cell = ActorCell {
-            tracker: None,
-            dependency: (),
-        };
+        let cell = ActorCell::new(());
 
-        let task = ExtensibleActorTask::new(f, cell, receiver, actor_ref.clone(), (), Some(tracker.make_child()));
+        let tracker = self.tracker.get_or_insert_default().make_child();
+
+        let task = ExtensibleActorTask::new(f, cell, receiver, actor_ref.clone(), (), Some(tracker));
 
         ActorToSpawn::new(task, actor_ref)
     }
@@ -57,5 +61,18 @@ where
         }
 
         ret
+    }
+}
+
+impl<M> ReceiveMessage<M> for ExtendableMessageReceiver<M, ()>
+where
+    M: Send + 'static,
+{
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + '_ {
+        poll_fn(|cx| match self.m_receiver.poll_next_unpin(cx) {
+            Poll::Ready(None) => Poll::Ready(Recv::NoMoreSenders),
+            Poll::Ready(Some(m)) => Poll::Ready(Recv::Message(m)),
+            Poll::Pending => Poll::Pending,
+        })
     }
 }

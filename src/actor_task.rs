@@ -1,7 +1,7 @@
 use crate::actor_ref::ActorRef;
-use crate::actor_ref::ExtendableMessageReceiver;
 use crate::children_tracker::WakeParentOnDrop;
 use crate::create_child::ActorCell;
+use crate::receive_message::ExtendableMessageReceiver;
 use std::future::Future;
 use std::marker::PhantomData;
 

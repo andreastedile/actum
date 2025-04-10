@@ -10,6 +10,15 @@ pub struct ActorCell<D> {
     pub(crate) dependency: D,
 }
 
+impl<D> ActorCell<D> {
+    pub const fn new(dependency: D) -> Self {
+        Self {
+            tracker: None,
+            dependency,
+        }
+    }
+}
+
 pub trait CreateChild: Sized + Send + 'static {
     type MessageReceiverT<M2>: ReceiveMessage<M2> + Send + 'static
     where
