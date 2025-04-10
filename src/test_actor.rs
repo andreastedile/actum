@@ -276,8 +276,8 @@ impl<M> MessageReceiverTestkitExtension<M> {
     }
 }
 
-/// The [crate::actor::Actor::recv] future can be dropped before being polled to completion; for example, when it
-/// races with a short timeout.
+/// The future returned by the [recv](crate::receive_message::ReceiveMessage::recv) method
+/// can be dropped before being polled to completion; for example, when it races with a timeout.
 /// This fact, and the fact that the result of the future is temporarily transferred to the testkit,
 /// makes future not cancel safe.
 ///

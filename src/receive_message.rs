@@ -11,7 +11,7 @@ where
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
 }
 
-/// Value returned by the [recv](Actor::recv) method.
+/// Value returned by the [recv](crate::receive_message::ReceiveMessage::recv) method.
 #[derive(EnumAsInner)]
 pub enum Recv<M> {
     /// The actor has received a message.
