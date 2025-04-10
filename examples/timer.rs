@@ -1,14 +1,14 @@
+use actum::prelude::*;
 use std::time::Duration;
 use tracing::Instrument;
 
-use actum::prelude::*;
-
-async fn an_actor<A>(mut cell: A, mut receiver: MessageReceiver<u32>, _me: ActorRef<u32>) -> (A, ())
+async fn an_actor<A, R>(cell: A, mut receiver: R, _me: ActorRef<u32>) -> (A, ())
 where
     A: Actor<u32, ()>,
+    R: ReceiveMessage<u32>,
 {
     tokio::select! {
-        Recv::Message(m) = cell.recv(&mut receiver) => {
+        Recv::Message(m) = receiver.recv() => {
             tracing::info!(m);
         }
         _ = tokio::time::sleep(Duration::from_secs(1)) => {

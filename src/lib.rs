@@ -2,7 +2,7 @@ use crate::actor_cell::ActorCell;
 use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
 use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
-use actor_ref::MessageReceiver;
+use actor_ref::ExtendableMessageReceiver;
 use std::future::Future;
 
 pub mod actor;
@@ -26,11 +26,12 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>) -> (A, ())
+/// async fn root<A, R>(mut cell: A, mut receiver: R, mut me: ActorRef<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64, ()>,
+///     R: ReceiveMessage<u64>,
 /// {
-///     let m = cell.recv(&mut receiver).await.into_message().unwrap();
+///     let m = receiver.recv().await.into_message().unwrap();
 ///     println!("{}", m);
 ///     (cell, ())
 /// }
@@ -50,7 +51,7 @@ pub mod testkit;
 /// #[tokio::main]
 /// async fn main() {
 ///     let mut root = actum::<u64, _, _, _>(|mut cell, mut receiver, me| async move {
-///         let m = cell.recv(&mut receiver).await.into_message().unwrap();
+///         let m = receiver.recv().await.into_message().unwrap();
 ///         println!("{}", m);
 ///         (cell, ())
 ///     });
@@ -63,11 +64,12 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A>(mut cell: A, mut receiver: MessageReceiver<u64>, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
+/// async fn root<A, R>(mut cell: A, mut receiver: R, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
 /// where
 ///     A: Actor<u64, ()>,
+///     R: ReceiveMessage<u64>,
 /// {
-///     let m = cell.recv(&mut receiver).await.into_message().unwrap();
+///     let m = receiver.recv().await.into_message().unwrap();
 ///     vec.push(m);
 ///     for m in vec {
 ///         println!("{}", m);
@@ -83,10 +85,10 @@ pub mod testkit;
 ///     root.task.run_task().await;
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, ()>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, (), ExtendableMessageReceiver<M, ()>>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<(), Ret>, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    F: FnOnce(ActorCell<(), Ret>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
     Fut: Future<Output = (ActorCell<(), Ret>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {

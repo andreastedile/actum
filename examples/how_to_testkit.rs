@@ -1,11 +1,12 @@
 use actum::prelude::*;
 use tracing::Instrument;
 
-async fn generic_parent<A>(mut cell: A, mut receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
+async fn generic_parent<A, R>(mut cell: A, mut receiver: R, _me: ActorRef<u64>) -> (A, ())
 where
     A: Actor<u64, ()>,
+    R: ReceiveMessage<u64>,
 {
-    let m = cell.recv(&mut receiver).await.into_message().unwrap();
+    let m = receiver.recv().await.into_message().unwrap();
     tracing::info!(recv = m);
 
     let child = cell
@@ -19,14 +20,15 @@ where
     (cell, ())
 }
 
-async fn generic_child<A>(mut cell: A, mut receiver: MessageReceiver<u64>, mut me: ActorRef<u64>, m: u64) -> (A, u64)
+async fn generic_child<A, R>(cell: A, mut receiver: R, mut me: ActorRef<u64>, m: u64) -> (A, u64)
 where
     A: Actor<u64, u64>,
+    R: ReceiveMessage<u64>,
 {
     tracing::info!(try_send = m * 2);
     me.try_send(m * 2).unwrap();
 
-    let m_times_two = cell.recv(&mut receiver).await.into_message().unwrap();
+    let m_times_two = receiver.recv().await.into_message().unwrap();
     tracing::info!(recv = m_times_two);
 
     (cell, m_times_two)
@@ -64,7 +66,7 @@ async fn test() {
         .await;
 
     let mut child_tk = parent_tk
-        .expect_spawn_effect(async |mut effect| {
+        .expect_spawn_effect(async |effect| {
             let effect = effect.downcast_unwrap::<u64, u64>();
             effect.testkit
         })
@@ -79,7 +81,7 @@ async fn test() {
 
     let _ = child_tk
         .expect_returned_effect(async |effect| {
-            assert_eq!(effect.ret, 2);
+            assert_eq!(*effect.ret, 2);
         })
         .await;
 

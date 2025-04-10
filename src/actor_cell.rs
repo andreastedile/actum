@@ -25,7 +25,6 @@ mod tests {
     #[test]
     fn test_it() {
         let t = trybuild::TestCases::new();
-        t.pass("tests/ui/return_type_v1.rs");
         t.compile_fail("tests/ui/return_type_v2.rs");
     }
 }

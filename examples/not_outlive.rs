@@ -10,9 +10,10 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn parent<A>(mut cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
+async fn parent<A, R>(mut cell: A, _receiver: R, _me: ActorRef<()>) -> (A, ())
 where
     A: Actor<(), ()>,
+    R: ReceiveMessage<()>,
 {
     let child = cell.create_child(child).await;
     let span = tracing::trace_span!("child");
@@ -23,9 +24,10 @@ where
     (cell, ())
 }
 
-async fn child<A>(cell: A, _receiver: MessageReceiver<()>, _me: ActorRef<()>) -> (A, ())
+async fn child<A, R>(cell: A, _receiver: R, _me: ActorRef<()>) -> (A, ())
 where
     A: Actor<(), ()>,
+    R: ReceiveMessage<()>,
 {
     tracing::info!("sleeping for 1 second");
     tokio::time::sleep(Duration::from_secs(1)).await;

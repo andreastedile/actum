@@ -1,9 +1,10 @@
 use actum::prelude::*;
 use tracing::Instrument;
 
-async fn generic_parent<A>(mut cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
+async fn generic_parent<A, R>(mut cell: A, _receiver: R, _me: ActorRef<u64>) -> (A, ())
 where
     A: Actor<u64, ()>,
+    R: ReceiveMessage<u64>,
 {
     let child = cell
         .create_child(move |cell, receiver, me| async move { generic_child(cell, receiver, me).await })
@@ -14,9 +15,10 @@ where
     (cell, ())
 }
 
-async fn generic_child<A>(cell: A, _receiver: MessageReceiver<u64>, _me: ActorRef<u64>) -> (A, ())
+async fn generic_child<A, R>(cell: A, _receiver: R, _me: ActorRef<u64>) -> (A, ())
 where
     A: Actor<u64, ()>,
+    R: ReceiveMessage<u64>,
 {
     tracing::info!("hello from child!");
     (cell, ())

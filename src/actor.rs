@@ -1,5 +1,4 @@
 use crate::actor_ref::ActorRef;
-use crate::actor_ref::MessageReceiver;
 use crate::actor_task::RunTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use enum_as_inner::EnumAsInner;
@@ -18,12 +17,13 @@ where
     type HasRunTask<M2, F, Fut, Ret2>: RunTask<Ret2>
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2, Ret2>, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
 
-    /// Asynchronously receive the next message.
-    fn recv<'a>(&'a mut self, receiver: &'a mut MessageReceiver<M>) -> impl Future<Output = Recv<M>> + Send + 'a;
+    type MessageReceiverT<M2>: ReceiveMessage<M2> + Send + 'static
+    where
+        M2: Send + 'static;
 
     /// Creates a child actor.
     /// The actor should then be spawned onto the runtime of choice.
@@ -36,9 +36,17 @@ where
     ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>> + Send + '_
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2, Ret2>, MessageReceiver<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self::ChildActor<M2, Ret2>, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
+}
+
+pub trait ReceiveMessage<M>: Send + 'static
+where
+    M: Send + 'static,
+{
+    /// Asynchronously receive the next message.
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
 }
 
 /// Value returned by the [recv](Actor::recv) method.
