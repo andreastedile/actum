@@ -2,9 +2,9 @@ use actum::prelude::*;
 use std::time::Duration;
 use tracing::Instrument;
 
-async fn an_actor<A, R>(cell: A, mut receiver: R, _me: ActorRef<u32>) -> (A, ())
+async fn an_actor<C, R>(cell: C, mut receiver: R, _me: ActorRef<u32>) -> (C, ())
 where
-    A: Actor<u32, ()>,
+    C: CreateChild,
     R: ReceiveMessage<u32>,
 {
     tokio::select! {

@@ -1,5 +1,5 @@
-use crate::actor::{ReceiveMessage, Recv};
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::receive_message::{ReceiveMessage, Recv};
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use std::future::{poll_fn, Future};

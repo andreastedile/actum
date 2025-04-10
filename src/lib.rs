@@ -1,18 +1,20 @@
-use crate::actor_cell::ActorCell;
 use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
-use crate::actor_task::ActorTask;
+use crate::actor_task::ExtensibleActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
+use crate::create_child::ActorCell;
 use actor_ref::ExtendableMessageReceiver;
 use std::future::Future;
 
 pub mod actor;
-pub mod actor_cell;
 pub mod actor_ref;
 pub mod actor_task;
 pub mod actor_to_spawn;
 pub mod children_tracker;
+pub mod create_child;
 pub mod effect;
 pub mod prelude;
+mod receive_message;
+pub mod test_actor;
 pub mod testkit;
 
 /// Creates the root actor of the actor tree hierarchy.
@@ -26,9 +28,9 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A, R>(mut cell: A, mut receiver: R, mut me: ActorRef<u64>) -> (A, ())
+/// async fn root<C, R>(mut cell: C, mut receiver: R, mut me: ActorRef<u64>) -> (C, ())
 /// where
-///     A: Actor<u64, ()>,
+///     C: CreateChild,
 ///     R: ReceiveMessage<u64>,
 /// {
 ///     let m = receiver.recv().await.into_message().unwrap();
@@ -64,9 +66,9 @@ pub mod testkit;
 /// ```
 /// use actum::prelude::*;
 ///
-/// async fn root<A, R>(mut cell: A, mut receiver: R, me: ActorRef<u64>, mut vec: Vec<u64>) -> (A, ())
+/// async fn root<C, R>(mut cell: C, mut receiver: R, me: ActorRef<u64>, mut vec: Vec<u64>) -> (C, ())
 /// where
-///     A: Actor<u64, ()>,
+///     C: CreateChild,
 ///     R: ReceiveMessage<u64>,
 /// {
 ///     let m = receiver.recv().await.into_message().unwrap();
@@ -85,18 +87,21 @@ pub mod testkit;
 ///     root.task.run_task().await;
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, (), ExtendableMessageReceiver<M, ()>>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ExtensibleActorTask<M, F, Fut, Ret, (), (), ()>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<(), Ret>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<(), Ret>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell<()>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M>();
 
-    let cell = ActorCell::<(), Ret>::new(());
+    let cell = ActorCell {
+        tracker: None,
+        dependency: (),
+    };
 
-    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
+    let task = ExtensibleActorTask::new(f, cell, receiver, actor_ref.clone(), (), None);
 
     ActorToSpawn::new(task, actor_ref)
 }

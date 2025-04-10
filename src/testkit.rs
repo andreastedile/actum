@@ -1,8 +1,8 @@
-use crate::actor_cell::test_actor::TestExtension;
-use crate::actor_cell::ActorCell;
-use crate::actor_ref::{ActorRef, MessageReceiverWithTestkitExtension};
-use crate::actor_task::{ActorInner, ActorTask};
+use crate::actor_ref::{ActorRef, MessageReceiverTestkitExtension, MessageReceiverWithTestkitExtension};
+use crate::actor_task::ExtensibleActorTask;
+use crate::test_actor::{ActorCellTestkitExtension, ActorInner, ActorTaskTestkitExtension};
 
+use crate::create_child::ActorCell;
 use crate::effect::recv_effect::{
     RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, RecvEffectImpl,
 };
@@ -171,9 +171,9 @@ impl<M, Ret> Testkit<M, Ret> {
     /// use actum::testkit::actum_with_testkit;
     /// use actum::testkit::ActumWithTestkit;
     ///
-    /// async fn root<A, R>(mut cell: A, mut receiver: R, mut me: ActorRef<u64>) -> (A, ())
+    /// async fn root<C, R>(mut cell: C, mut receiver: R, mut me: ActorRef<u64>) -> (C, ())
     /// where
-    ///     A: Actor<u64, ()>,
+    ///     C: CreateChild,
     ///     R: ReceiveMessage<u64>,
     /// {
     ///     let m1 = receiver.recv().await.into_message().unwrap();
@@ -280,9 +280,9 @@ impl<M, Ret> Testkit<M, Ret> {
     /// use actum::testkit::actum_with_testkit;
     /// use actum::testkit::ActumWithTestkit;
     ///
-    /// async fn parent<A, R>(mut cell: A, _receiver: R, _me: ActorRef<u64>) -> (A, ())
+    /// async fn parent<C, R>(mut cell: C, _receiver: R, _me: ActorRef<u64>) -> (C, ())
     /// where
-    ///     A: Actor<u64, ()>,
+    ///     C: CreateChild,
     ///     R: ReceiveMessage<u64>,
     /// {
     ///     let child = cell.create_child(child).await;
@@ -291,9 +291,9 @@ impl<M, Ret> Testkit<M, Ret> {
     ///     (cell, ())
     /// }
     ///
-    /// async fn child<A, R>(mut cell: A, _receiver: R, _me: ActorRef<u32>) -> (A, ())
+    /// async fn child<C, R>(mut cell: C, _receiver: R, _me: ActorRef<u32>) -> (C, ())
     /// where
-    ///     A: Actor<u32, ()>,
+    ///     C: CreateChild,
     ///     R: ReceiveMessage<u32>,
     /// {
     ///     (cell, ())
@@ -384,9 +384,9 @@ impl<M, Ret> Testkit<M, Ret> {
     /// use actum::testkit::actum_with_testkit;
     /// use actum::testkit::ActumWithTestkit;
     ///
-    /// async fn parent<A, R>(mut cell: A, _receiver: R, _me: ActorRef<u64>) -> (A, &'static str)
+    /// async fn parent<C, R>(mut cell: C, _receiver: R, _me: ActorRef<u64>) -> (C, &'static str)
     /// where
-    ///     A: Actor<u64, &'static str>,
+    ///     C: CreateChild,
     ///     R: ReceiveMessage<u64>
     /// {
     ///     (cell, "returned")
@@ -502,20 +502,25 @@ pub fn actum_with_testkit<M, F, Fut, Ret>(
     f: F,
 ) -> ActumWithTestkit<
     M,
-    ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret, TestExtension<Ret>, MessageReceiverWithTestkitExtension<M>>,
+    ExtensibleActorTask<
+        M,
+        ActorInner<F, M, Ret>,
+        Fut,
+        Ret,
+        ActorCellTestkitExtension,
+        MessageReceiverTestkitExtension<M>,
+        ActorTaskTestkitExtension<Ret>,
+    >,
     Ret,
 >
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<TestExtension<Ret>, Ret>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
+    F: FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
         + Send
         + 'static,
-    Fut: Future<Output = (ActorCell<TestExtension<Ret>, Ret>, Ret)> + Send + 'static,
+    Fut: Future<Output = (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
-    let m_channel = mpsc::channel::<M>(100);
-    let actor_ref = ActorRef::<M>::new(m_channel.0);
-
     let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_from_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let spawn_effect_from_actor_to_testkit_channel = mpsc::channel::<UntypedSpawnEffectFromActorToTestkit>(1);
@@ -523,15 +528,24 @@ where
     let returned_effect_from_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
     let returned_effect_from_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
 
+    let cell = ActorCell {
+        tracker: None,
+        dependency: ActorCellTestkitExtension {
+            spawn_effect_from_actor_to_testkit_sender: spawn_effect_from_actor_to_testkit_channel.0,
+            spawn_effect_from_testkit_to_actor_receiver: spawn_effect_from_testkit_to_actor_channel.1,
+        },
+    };
+
+    let m_channel = mpsc::channel::<M>(100);
+    let actor_ref = ActorRef::<M>::new(m_channel.0);
+
     let receiver = MessageReceiverWithTestkitExtension::<M>::new(
         m_channel.1,
         recv_effect_from_actor_to_testkit_channel.0,
         recv_effect_from_testkit_to_actor_channel.1,
     );
 
-    let extension = TestExtension::new(
-        spawn_effect_from_actor_to_testkit_channel.0,
-        spawn_effect_from_testkit_to_actor_channel.1,
+    let extension = ActorTaskTestkitExtension::new(
         returned_effect_from_actor_to_testkit_channel.0,
         returned_effect_from_testkit_to_actor_channel.1,
     );
@@ -545,8 +559,14 @@ where
         returned_effect_from_testkit_to_actor_channel.0,
     );
 
-    let cell = ActorCell::<TestExtension<Ret>, Ret>::new(extension);
-    let task = ActorTask::new(ActorInner::Unboxed(f), cell, receiver, actor_ref.clone(), None);
+    let task = ExtensibleActorTask::new(
+        ActorInner::Unboxed(f),
+        cell,
+        receiver,
+        actor_ref.clone(),
+        extension,
+        None,
+    );
 
     ActumWithTestkit {
         task,

@@ -1,12 +1,7 @@
-use crate::actor_cell::test_actor::TestExtension;
-use crate::actor_cell::ActorCell;
+use crate::actor_ref::ActorRef;
 use crate::actor_ref::ExtendableMessageReceiver;
-use crate::actor_ref::{ActorRef, MessageReceiverWithTestkitExtension};
 use crate::children_tracker::WakeParentOnDrop;
-use crate::effect::returned_effect::ReturnedEffectFromActorToTestkit;
-use futures::future::BoxFuture;
-use std::any::Any;
-use std::fmt::{Debug, Formatter};
+use crate::create_child::ActorCell;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -14,134 +9,36 @@ pub trait RunTask<Ret>: Send + 'static {
     fn run_task(self) -> impl Future<Output = Ret> + Send + 'static;
 }
 
-pub struct ActorTask<M, F, Fut, Ret, D, R> {
+pub struct ExtensibleActorTask<M, F, Fut, Ret, C, R, D> {
     pub(crate) f: F,
     ret: PhantomData<Ret>,
     fut: PhantomData<Fut>,
-    pub(crate) cell: ActorCell<D, Ret>,
-    pub(crate) receiver: R,
-    actor_ref: ActorRef<M>,
+    pub(crate) receiver: ExtendableMessageReceiver<M, R>,
+    pub(crate) cell: ActorCell<C>,
+    pub(crate) actor_ref: ActorRef<M>,
+    pub(crate) dependency: D,
     /// None if there is no parent (thus, the actor is the root of the tree).
     _waker: Option<WakeParentOnDrop>,
 }
 
-impl<M, F, Fut, Ret, D, R> ActorTask<M, F, Fut, Ret, D, R> {
+impl<M, F, Fut, Ret, C, R, D> ExtensibleActorTask<M, F, Fut, Ret, C, R, D> {
     pub(crate) const fn new(
         f: F,
-        cell: ActorCell<D, Ret>,
-        receiver: R,
+        cell: ActorCell<C>,
+        receiver: ExtendableMessageReceiver<M, R>,
         actor_ref: ActorRef<M>,
+        dependency: D,
         waker: Option<WakeParentOnDrop>,
     ) -> Self {
         Self {
             f,
             ret: PhantomData,
             fut: PhantomData,
-            cell,
             receiver,
+            cell,
             actor_ref,
+            dependency,
             _waker: waker,
         }
-    }
-}
-
-impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret, (), ExtendableMessageReceiver<M, ()>>
-where
-    M: Send + 'static,
-    F: FnOnce(ActorCell<(), Ret>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<(), Ret>, Ret)> + Send + 'static,
-    Ret: Send + 'static,
-{
-    async fn run_task(self) -> Ret {
-        let f = self.f;
-        let fut = f(self.cell, self.receiver, self.actor_ref);
-        let (mut cell, ret) = fut.await;
-
-        if let Some(tracker) = cell.tracker.take() {
-            tracing::trace!("joining children");
-            tracker.join_all().await;
-        }
-
-        ret
-    }
-}
-
-pub enum ActorInner<F, M, Ret> {
-    Unboxed(F),
-    Boxed(BoxTestActor<M, Ret>),
-}
-
-impl<M, F, Fut, Ret> RunTask<Ret>
-    for ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret, TestExtension<Ret>, MessageReceiverWithTestkitExtension<M>>
-where
-    M: Send + 'static,
-    F: FnOnce(ActorCell<TestExtension<Ret>, Ret>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
-        + Send
-        + 'static,
-    Fut: Future<Output = (ActorCell<TestExtension<Ret>, Ret>, Ret)> + Send + 'static,
-    Ret: Send + 'static,
-{
-    async fn run_task(self) -> Ret {
-        let f = self.f;
-        let (mut cell, ret) = match f {
-            ActorInner::Unboxed(f) => {
-                //
-                let fut = f(self.cell, self.receiver, self.actor_ref);
-                fut.await
-            }
-            ActorInner::Boxed(f) => {
-                //
-                let fut = f(self.cell, self.receiver, self.actor_ref);
-                fut.await
-            }
-        };
-
-        if let Some(tracker) = cell.tracker.take() {
-            tracing::trace!("joining children");
-            tracker.join_all().await;
-        }
-
-        let extension = cell.dependency;
-
-        let effect_out = ReturnedEffectFromActorToTestkit { ret };
-        extension
-            .returned_effect_from_actor_to_testkit_sender
-            .send(effect_out)
-            .expect("could not send the effect to the testkit");
-
-        let effect_in = extension
-            .returned_effect_from_testkit_to_actor_receiver
-            .await
-            .expect("could not receive effect back from the testkit");
-
-        effect_in.ret
-    }
-}
-
-#[rustfmt::skip]
-pub type BoxTestActor<M, Ret> =
-    Box<dyn FnOnce(ActorCell<TestExtension<Ret>, Ret>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> BoxFuture<'static, (ActorCell<TestExtension<Ret>, Ret>, Ret)> + Send + 'static>;
-
-pub(crate) struct UntypedBoxTestActor(Box<dyn Any + Send>);
-
-impl Debug for UntypedBoxTestActor {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("UntypedBoxTestActor")
-    }
-}
-
-impl<M, Ret> From<BoxTestActor<M, Ret>> for UntypedBoxTestActor
-where
-    M: 'static,
-    Ret: 'static,
-{
-    fn from(actor: BoxTestActor<M, Ret>) -> Self {
-        Self(Box::new(actor))
-    }
-}
-
-impl UntypedBoxTestActor {
-    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> BoxTestActor<M, Ret> {
-        self.0.downcast::<BoxTestActor<M, Ret>>().unwrap()
     }
 }

@@ -1,4 +1,4 @@
-use crate::actor_task::{BoxTestActor, UntypedBoxTestActor};
+use crate::test_actor::{BoxTestActor, UntypedBoxTestActor};
 use crate::testkit::{Testkit, UntypedTestkit};
 use std::fmt::{Debug, Formatter};
 

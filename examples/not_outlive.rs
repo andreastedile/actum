@@ -10,9 +10,9 @@ use tracing::Instrument;
 
 use actum::prelude::*;
 
-async fn parent<A, R>(mut cell: A, _receiver: R, _me: ActorRef<()>) -> (A, ())
+async fn parent<C, R>(mut cell: C, _receiver: R, _me: ActorRef<()>) -> (C, ())
 where
-    A: Actor<(), ()>,
+    C: CreateChild,
     R: ReceiveMessage<()>,
 {
     let child = cell.create_child(child).await;
@@ -24,9 +24,9 @@ where
     (cell, ())
 }
 
-async fn child<A, R>(cell: A, _receiver: R, _me: ActorRef<()>) -> (A, ())
+async fn child<C, R>(cell: C, _receiver: R, _me: ActorRef<()>) -> (C, ())
 where
-    A: Actor<(), ()>,
+    C: CreateChild,
     R: ReceiveMessage<()>,
 {
     tracing::info!("sleeping for 1 second");

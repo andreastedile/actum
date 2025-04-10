@@ -1,4 +1,4 @@
-use crate::actor::Recv;
+use crate::receive_message::Recv;
 use std::fmt::{Debug, Formatter};
 
 pub(crate) struct RecvEffectImpl<M> {

@@ -1,80 +1,61 @@
-use crate::actor_ref::ActorRef;
-use crate::actor_task::RunTask;
+use crate::actor_ref::ExtendableMessageReceiver;
+use crate::actor_ref::{create_actor_ref_and_message_receiver, ActorRef};
+use crate::actor_task::{ExtensibleActorTask, RunTask};
 use crate::actor_to_spawn::ActorToSpawn;
-use enum_as_inner::EnumAsInner;
-use std::fmt::{Debug, Formatter};
+use crate::create_child::{ActorCell, CreateChild};
 use std::future::Future;
 
-pub trait Actor<M, Ret>: Send + 'static
-where
-    M: Send + 'static,
-    Ret: Send + 'static,
-{
-    type ChildActor<M2, Ret2>: Actor<M2, Ret2>
-    where
-        M2: Send + 'static,
-        Ret2: Send + 'static;
-    type HasRunTask<M2, F, Fut, Ret2>: RunTask<Ret2>
-    where
-        M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2, Ret2>, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
-        Ret2: Send + 'static;
-
-    type MessageReceiverT<M2>: ReceiveMessage<M2> + Send + 'static
+impl CreateChild for ActorCell<()> {
+    type MessageReceiverT<M2>
+        = ExtendableMessageReceiver<M2, ()>
     where
         M2: Send + 'static;
-
-    /// Creates a child actor.
-    /// The actor should then be spawned onto the runtime of choice.
-    ///
-    /// See the [actum](crate::actum) function for passing a function pointer, passing a closure and
-    /// for passing arguments to the actor.
-    fn create_child<M2, F, Fut, Ret2>(
-        &mut self,
-        f: F,
-    ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>> + Send + '_
+    type HasRunTask<M2, F, Fut, Ret2>
+        = ExtensibleActorTask<M2, F, Fut, Ret2, (), (), ()>
     where
         M2: Send + 'static,
-        F: FnOnce(Self::ChildActor<M2, Ret2>, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self::ChildActor<M2, Ret2>, Ret2)> + Send + 'static,
+        F: FnOnce(ActorCell<()>, ExtendableMessageReceiver<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<()>, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
-}
 
-pub trait ReceiveMessage<M>: Send + 'static
-where
-    M: Send + 'static,
-{
-    /// Asynchronously receive the next message.
-    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
-}
+    async fn create_child<M2, F, Fut, Ret2>(&mut self, f: F) -> ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>
+    where
+        M2: Send + 'static,
+        F: FnOnce(ActorCell<()>, ExtendableMessageReceiver<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,
+        Fut: Future<Output = (ActorCell<()>, Ret2)> + Send + 'static,
+        Ret2: Send + 'static,
+    {
+        let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
 
-/// Value returned by the [recv](Actor::recv) method.
-#[derive(EnumAsInner)]
-pub enum Recv<M> {
-    /// The actor has received a message.
-    Message(M),
-    /// All [`ActorRef`]s to the actor have been dropped, and all messages sent to the actor
-    /// have been received by the actor.
-    ///
-    /// The actor may wish to terminate unless it has other sources of input.
-    NoMoreSenders,
-}
+        let tracker = self.tracker.get_or_insert_default();
+        let cell = ActorCell {
+            tracker: None,
+            dependency: (),
+        };
 
-impl<M> Debug for Recv<M> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Message(_) => f.write_str("Message"),
-            Self::NoMoreSenders => f.write_str("NoMoreSenders"),
-        }
+        let task = ExtensibleActorTask::new(f, cell, receiver, actor_ref.clone(), (), Some(tracker.make_child()));
+
+        ActorToSpawn::new(task, actor_ref)
     }
 }
 
-impl<M> Recv<M> {
-    pub const fn as_ref(&self) -> Recv<&M> {
-        match self {
-            Self::Message(message) => Recv::Message(message),
-            Self::NoMoreSenders => Recv::NoMoreSenders,
+impl<M, F, Fut, Ret> RunTask<Ret> for ExtensibleActorTask<M, F, Fut, Ret, (), (), ()>
+where
+    M: Send + 'static,
+    F: FnOnce(ActorCell<()>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
+    Ret: Send + 'static,
+{
+    async fn run_task(self) -> Ret {
+        let f = self.f;
+        let fut = f(self.cell, self.receiver, self.actor_ref);
+        let (mut cell, ret) = fut.await;
+
+        if let Some(tracker) = cell.tracker.take() {
+            tracing::trace!("joining children");
+            tracker.join_all().await;
         }
+
+        ret
     }
 }
