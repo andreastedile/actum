@@ -101,12 +101,12 @@ where
 
         let effect_out = ReturnedEffectFromActorToTestkit { ret };
         extension
-            .returned_effect_sender
+            .returned_effect_from_actor_to_testkit_sender
             .send(effect_out)
             .expect("could not send the effect to the testkit");
 
         let effect_in = extension
-            .returned_effect_receiver
+            .returned_effect_from_testkit_to_actor_receiver
             .await
             .expect("could not receive effect back from the testkit");
 

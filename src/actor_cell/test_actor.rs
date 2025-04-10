@@ -17,42 +17,42 @@ use std::task::{ready, Poll};
 
 pub struct TestExtension<M, Ret> {
     /// used to send recv effects from the actor under test to the corresponding testkit.
-    pub(crate) recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
+    pub(crate) recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     /// used to receive recv effects from the testkit to the actor.
-    recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
+    recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
 
     state: RecvFutureStateMachine,
 
     /// used to send spawn effects from the actor under test to the corresponding testkit.
-    spawn_effect_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
+    spawn_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
     /// used to receive spawn effects from the testkit to the actor.
-    spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
+    spawn_effect_from_testkit_to_actor_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
 
     /// used to send returned effects from the actor under test to the corresponding testkit.
-    pub(crate) returned_effect_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
+    pub(crate) returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
     /// used to receive returned effects from the testkit to the actor.
-    pub(crate) returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
+    pub(crate) returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
 
     _ret: PhantomData<Ret>,
 }
 
 impl<M, Ret> TestExtension<M, Ret> {
     pub(crate) const fn new(
-        recv_effect_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
-        recv_effect_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
-        spawn_effect_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
-        spawn_effect_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
-        returned_effect_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
-        returned_effect_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
+        recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
+        recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
+        spawn_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedSpawnEffectFromActorToTestkit>,
+        spawn_effect_from_testkit_to_actor_receiver: mpsc::Receiver<SpawnEffectFromTestkitToActor>,
+        returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
+        returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
     ) -> Self {
         Self {
-            recv_effect_sender,
-            recv_effect_receiver,
+            recv_effect_from_actor_to_testkit_sender,
+            recv_effect_from_testkit_to_actor_receiver,
             state: RecvFutureStateMachine::S0,
-            spawn_effect_sender,
-            spawn_effect_receiver,
-            returned_effect_sender,
-            returned_effect_receiver,
+            spawn_effect_from_actor_to_testkit_sender,
+            spawn_effect_from_testkit_to_actor_receiver,
+            returned_effect_from_actor_to_testkit_sender,
+            returned_effect_from_testkit_to_actor_receiver,
             _ret: PhantomData,
         }
     }
@@ -143,7 +143,7 @@ where
         }
 
         poll_fn(|cx| {
-            if self.dependency.recv_effect_sender.is_closed() {
+            if self.dependency.recv_effect_from_actor_to_testkit_sender.is_closed() {
                 panic!("the testkit has dropped");
             }
 
@@ -155,14 +155,18 @@ where
                         let effect_out = RecvEffectFromActorToTestkit { recv };
 
                         self.dependency
-                            .recv_effect_sender
+                            .recv_effect_from_actor_to_testkit_sender
                             .try_send(effect_out)
                             .expect("could not send the effect to the testkit");
 
                         self.dependency.state = RecvFutureStateMachine::S1;
                     }
                     RecvFutureStateMachine::S1 => {
-                        let effect_in = match self.dependency.recv_effect_receiver.poll_next_unpin(cx) {
+                        let effect_in = match self
+                            .dependency
+                            .recv_effect_from_testkit_to_actor_receiver
+                            .poll_next_unpin(cx)
+                        {
                             Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
                             Poll::Ready(Some(effect_in)) => effect_in,
                             Poll::Pending => return Poll::Pending,
@@ -175,7 +179,11 @@ where
                         } // else: poll the channels in the next iteration
                     }
                     RecvFutureStateMachine::S2 => {
-                        let effect_in = match self.dependency.recv_effect_receiver.poll_next_unpin(cx) {
+                        let effect_in = match self
+                            .dependency
+                            .recv_effect_from_testkit_to_actor_receiver
+                            .poll_next_unpin(cx)
+                        {
                             Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
                             Poll::Ready(Some(effect_in)) => effect_in,
                             Poll::Pending => return Poll::Pending,
@@ -184,7 +192,7 @@ where
                         let effect_out = RecvEffectFromActorToTestkit { recv: effect_in.recv };
 
                         self.dependency
-                            .recv_effect_sender
+                            .recv_effect_from_actor_to_testkit_sender
                             .try_send(effect_out)
                             .expect("could not send the effect to the testkit");
 
@@ -205,7 +213,7 @@ where
         Fut: Future<Output = (ActorCell<TestExtension<M2, Ret2>, Ret2>, Ret2)> + Send + 'static,
         Ret2: Send + 'static,
     {
-        assert!(!self.dependency.spawn_effect_sender.is_closed());
+        assert!(!self.dependency.spawn_effect_from_actor_to_testkit_sender.is_closed());
 
         let (actor_ref, receiver) = create_actor_ref_and_message_receiver::<M2>();
         let (extension, testkit) = create_testkit_pair::<M2, Ret2>();
@@ -226,13 +234,13 @@ where
         };
 
         self.dependency
-            .spawn_effect_sender
+            .spawn_effect_from_actor_to_testkit_sender
             .try_send(spawn_effect_to_testkit)
             .expect("could not send the effect to the testkit");
 
         let spawn_effect_from_actor = self
             .dependency
-            .spawn_effect_receiver
+            .spawn_effect_from_testkit_to_actor_receiver
             .next()
             .await
             .expect("could not receive the effect back from the testkit");
