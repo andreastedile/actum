@@ -5,9 +5,11 @@ use crate::actor_ref::{
 use crate::actor_task::ExtensibleActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::create_child::ActorCell;
+use crate::effect::create_child_effect::{
+    CreateChildEffectFromTestkitToActor, UntypedCreateChildEffectFromActorToTestkit,
+};
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
-use crate::effect::spawn_effect::{SpawnEffectFromTestkitToActor, UntypedSpawnEffectFromActorToTestkit};
 use crate::test_actor::{ActorCellTestkitExtension, ActorInner, ActorTaskTestkitExtension};
 use crate::testkit::{ActumWithTestkit, Testkit};
 use actor_ref::ExtendableMessageReceiver;
@@ -140,16 +142,17 @@ where
 {
     let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_from_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
-    let spawn_effect_from_actor_to_testkit_channel = mpsc::channel::<UntypedSpawnEffectFromActorToTestkit>(1);
-    let spawn_effect_from_testkit_to_actor_channel = mpsc::channel::<SpawnEffectFromTestkitToActor>(1);
+    let create_child_effect_from_actor_to_testkit_channel =
+        mpsc::channel::<UntypedCreateChildEffectFromActorToTestkit>(1);
+    let create_child_effect_from_testkit_to_actor_channel = mpsc::channel::<CreateChildEffectFromTestkitToActor>(1);
     let returned_effect_from_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
     let returned_effect_from_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
 
     let cell = ActorCell {
         tracker: None,
         dependency: ActorCellTestkitExtension {
-            spawn_effect_from_actor_to_testkit_sender: spawn_effect_from_actor_to_testkit_channel.0,
-            spawn_effect_from_testkit_to_actor_receiver: spawn_effect_from_testkit_to_actor_channel.1,
+            create_child_effect_from_actor_to_testkit_sender: create_child_effect_from_actor_to_testkit_channel.0,
+            create_child_effect_from_testkit_to_actor_receiver: create_child_effect_from_testkit_to_actor_channel.1,
         },
     };
 
@@ -170,8 +173,8 @@ where
     let testkit = Testkit::new(
         recv_effect_from_actor_to_testkit_channel.1,
         recv_effect_from_testkit_to_actor_channel.0,
-        spawn_effect_from_actor_to_testkit_channel.1,
-        spawn_effect_from_testkit_to_actor_channel.0,
+        create_child_effect_from_actor_to_testkit_channel.1,
+        create_child_effect_from_testkit_to_actor_channel.0,
         returned_effect_from_actor_to_testkit_channel.1,
         returned_effect_from_testkit_to_actor_channel.0,
     );

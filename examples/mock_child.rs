@@ -46,7 +46,7 @@ async fn test() {
     let handle = tokio::spawn(task.run_task().instrument(span));
 
     let mut child_tk = parent_tk
-        .expect_spawn_effect(async |effect| {
+        .expect_create_child_effect(async |effect| {
             let effect = effect.downcast_unwrap::<u64, ()>();
             let child_tk = effect.inject_actor(Box::new(|cell, _receiver, _me| {
                 async {

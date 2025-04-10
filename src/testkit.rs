@@ -1,12 +1,13 @@
 use crate::actor_ref::ActorRef;
+use crate::effect::create_child_effect::{
+    CreateChildEffectFromTestkitToActor, UntypedCreateChildEffect, UntypedCreateChildEffectFromActorToTestkit,
+    UntypedCreateChildEffectImpl,
+};
 use crate::effect::recv_effect::{
     RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, RecvEffectImpl,
 };
 use crate::effect::returned_effect::{
     ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor, ReturnedEffectImpl,
-};
-use crate::effect::spawn_effect::{
-    SpawnEffectFromTestkitToActor, UntypedSpawnEffect, UntypedSpawnEffectFromActorToTestkit, UntypedSpawnEffectImpl,
 };
 use crate::effect::{Effect, EffectImpl};
 use futures::channel::{mpsc, oneshot};
@@ -32,8 +33,8 @@ impl<M, Ret> Debug for Testkit<M, Ret> {
 struct TestkitState<M, Ret> {
     recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-    spawn_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedSpawnEffectFromActorToTestkit>,
-    spawn_effect_from_testkit_to_actor_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
+    create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
+    create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
     returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
     /// Wrapped in Option so that it can be taken.
     returned_effect_from_testkit_to_actor_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>>,
@@ -43,8 +44,8 @@ impl<M, Ret> Testkit<M, Ret> {
     pub(crate) const fn new(
         recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-        spawn_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedSpawnEffectFromActorToTestkit>,
-        spawn_effect_from_testkit_to_actor_sender: mpsc::Sender<SpawnEffectFromTestkitToActor>,
+        create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
+        create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
         returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
         returned_effect_from_testkit_to_actor_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>,
     ) -> Self {
@@ -52,8 +53,8 @@ impl<M, Ret> Testkit<M, Ret> {
             state: Some(TestkitState {
                 recv_effect_from_actor_to_testkit_receiver,
                 recv_effect_from_testkit_to_actor_sender,
-                spawn_effect_from_actor_to_testkit_receiver,
-                spawn_effect_from_testkit_to_actor_sender,
+                create_child_effect_from_actor_to_testkit_receiver,
+                create_child_effect_from_testkit_to_actor_sender,
                 returned_effect_from_actor_to_testkit_receiver,
                 returned_effect_from_testkit_to_actor_sender: Some(returned_effect_from_testkit_to_actor_sender),
             }),
@@ -85,10 +86,14 @@ impl<M, Ret> Testkit<M, Ret> {
                 }
                 Poll::Pending => {}
             };
-            match state.spawn_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state
+                .create_child_effect_from_actor_to_testkit_receiver
+                .next()
+                .poll_unpin(cx)
+            {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(EffectImpl::Spawn(UntypedSpawnEffectImpl {
+                    return Poll::Ready(EffectImpl::CreateChild(UntypedCreateChildEffectImpl {
                         untyped_testkit: Some(effect.untyped_testkit),
                         injected: None,
                     }));
@@ -111,7 +116,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 recv: &effect.recv,
                 discarded: &mut effect.discarded,
             }),
-            EffectImpl::Spawn(effect) => Effect::Spawn(UntypedSpawnEffect {
+            EffectImpl::CreateChild(effect) => Effect::CreateChild(UntypedCreateChildEffect {
                 untyped_testkit: effect.untyped_testkit.take().unwrap(),
                 injected: &mut effect.injected,
             }),
@@ -131,12 +136,12 @@ impl<M, Ret> Testkit<M, Ret> {
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
-            EffectImpl::Spawn(inner) => {
-                let effect_to_actor = SpawnEffectFromTestkitToActor {
+            EffectImpl::CreateChild(inner) => {
+                let effect_to_actor = CreateChildEffectFromTestkitToActor {
                     injected: inner.injected,
                 };
                 state
-                    .spawn_effect_from_testkit_to_actor_sender
+                    .create_child_effect_from_testkit_to_actor_sender
                     .try_send(effect_to_actor)
                     .expect("could not send effect back to actor");
             }
@@ -223,7 +228,11 @@ impl<M, Ret> Testkit<M, Ret> {
                 }
                 Poll::Pending => {}
             };
-            match state.spawn_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state
+                .create_child_effect_from_actor_to_testkit_receiver
+                .next()
+                .poll_unpin(cx)
+            {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `RecvEffect`, received {:?}", effect);
@@ -260,7 +269,7 @@ impl<M, Ret> Testkit<M, Ret> {
         t
     }
 
-    /// Receives a [UntypedSpawnEffect] from the actor under test and evaluates it with the provided closure.
+    /// Receives a [UntypedCreateChildEffect] from the actor under test and evaluates it with the provided closure.
     ///
     /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
@@ -298,7 +307,7 @@ impl<M, Ret> Testkit<M, Ret> {
     ///     let ActumWithTestkit { task, mut actor_ref, testkit: mut parent_tk } = actum_with_testkit(parent);
     ///     let handle = tokio::spawn(task.run_task());
     ///
-    ///     let mut child_tk = parent_tk.expect_spawn_effect(async |mut effect| {
+    ///     let mut child_tk = parent_tk.expect_create_child_effect(async |mut effect| {
     ///         let effect = effect.downcast_unwrap::<u32, ()>();
     ///         effect.testkit
     ///     }).await;
@@ -310,7 +319,10 @@ impl<M, Ret> Testkit<M, Ret> {
     /// }
     /// ```
     #[must_use]
-    pub async fn expect_spawn_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(UntypedSpawnEffect) -> T) -> T
+    pub async fn expect_create_child_effect<T>(
+        &mut self,
+        handler: impl for<'a> AsyncFnOnce(UntypedCreateChildEffect) -> T,
+    ) -> T
     where
         M: Send + 'static,
         Ret: Send + 'static,
@@ -321,14 +333,18 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.recv_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    panic!("Expected `SpawnEffect`, received {:?}", effect);
+                    panic!("Expected `CreateChildEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             };
-            match state.spawn_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state
+                .create_child_effect_from_actor_to_testkit_receiver
+                .next()
+                .poll_unpin(cx)
+            {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(UntypedSpawnEffectImpl {
+                    return Poll::Ready(UntypedCreateChildEffectImpl {
                         untyped_testkit: Some(effect.untyped_testkit),
                         injected: None,
                     });
@@ -338,7 +354,7 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!(),
                 Poll::Ready(Ok(effect)) => {
-                    panic!("Expected `SpawnEffect`, received {:?}", effect);
+                    panic!("Expected `CreateChildEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             }
@@ -346,18 +362,18 @@ impl<M, Ret> Testkit<M, Ret> {
         })
         .await;
 
-        let effect = UntypedSpawnEffect {
+        let effect = UntypedCreateChildEffect {
             untyped_testkit: effect_impl.untyped_testkit.take().unwrap(),
             injected: &mut effect_impl.injected,
         };
 
         let t = handler(effect).await;
 
-        let effect_to_actor = SpawnEffectFromTestkitToActor {
+        let effect_to_actor = CreateChildEffectFromTestkitToActor {
             injected: effect_impl.injected,
         };
         state
-            .spawn_effect_from_testkit_to_actor_sender
+            .create_child_effect_from_testkit_to_actor_sender
             .try_send(effect_to_actor)
             .expect("could not send effect back to actor");
 
@@ -415,7 +431,11 @@ impl<M, Ret> Testkit<M, Ret> {
                 }
                 Poll::Pending => {}
             };
-            match state.spawn_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state
+                .create_child_effect_from_actor_to_testkit_receiver
+                .next()
+                .poll_unpin(cx)
+            {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `ReturnedEffect`, received {:?}", effect);
