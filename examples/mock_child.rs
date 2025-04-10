@@ -26,8 +26,6 @@ where
 
 #[tokio::test]
 async fn test() {
-    use actum::testkit::actum_with_testkit;
-    use actum::testkit::ActumWithTestkit;
     use futures::FutureExt;
 
     tracing_subscriber::fmt()

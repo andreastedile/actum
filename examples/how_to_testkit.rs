@@ -36,9 +36,6 @@ where
 
 #[tokio::test]
 async fn test() {
-    use actum::testkit::actum_with_testkit;
-    use actum::testkit::ActumWithTestkit;
-
     tracing_subscriber::fmt()
         .with_span_events(
             tracing_subscriber::fmt::format::FmtSpan::NEW | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
