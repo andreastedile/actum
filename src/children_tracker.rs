@@ -1,74 +1,75 @@
 use futures::task::AtomicWaker;
-use std::future::{Future, IntoFuture};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::future::{Future, poll_fn};
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::Poll;
 
 #[derive(Default)]
-pub(crate) struct ChildrenTracker(Option<Arc<ChildrenState>>);
+pub(crate) struct ChildrenTracker {
+    inner: Option<Arc<ChildrenCountWithParentWaker>>,
+}
 
 impl ChildrenTracker {
     pub fn make_child(&mut self) -> WakeParentOnDrop {
-        if let Some(state) = self.0.as_mut() {
+        if let Some(state) = self.inner.as_mut() {
             state.children_count.fetch_add(1, Ordering::Relaxed);
-            WakeParentOnDrop(Arc::clone(state))
+            WakeParentOnDrop {
+                inner: Arc::clone(state),
+            }
         } else {
             // This is the first child.
-            let state = self.0.get_or_insert(Arc::new(ChildrenState {
-                waker: AtomicWaker::new(),
+            let state = self.inner.get_or_insert(Arc::new(ChildrenCountWithParentWaker {
+                parent_waker: AtomicWaker::new(),
                 children_count: AtomicUsize::new(1),
             }));
-            WakeParentOnDrop(Arc::clone(state))
-        }
-    }
-
-    pub fn join_all(self) -> impl Future<Output = ()> + Send + 'static {
-        self.into_future()
-    }
-}
-
-pub(crate) struct WakeParentOnDrop(Arc<ChildrenState>);
-
-impl Drop for WakeParentOnDrop {
-    fn drop(&mut self) {
-        let previous = self.0.children_count.fetch_sub(1, Ordering::Relaxed);
-        let remaining = previous - 1;
-        if remaining == 0 {
-            // Wake the parent.
-            self.0.waker.wake();
-        }
-    }
-}
-
-struct ChildrenState {
-    waker: AtomicWaker,
-    children_count: AtomicUsize,
-}
-
-impl Future for ChildrenTracker {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let Some(state) = self.0.as_ref() else {
-            return Poll::Ready(());
-        };
-        let current = state.children_count.load(Ordering::Relaxed);
-        if current == 0 {
-            self.0 = None;
-            Poll::Ready(())
-        } else {
-            state.waker.register(cx.waker());
-
-            let current = state.children_count.load(Ordering::Relaxed);
-            if current == 0 {
-                self.0 = None;
-                Poll::Ready(())
-            } else {
-                Poll::Pending
+            WakeParentOnDrop {
+                inner: Arc::clone(state),
             }
         }
     }
+
+    pub fn join_all(&mut self) -> impl Future<Output = ()> + '_ {
+        poll_fn(|cx| {
+            let Some(state) = self.inner.as_ref() else {
+                return Poll::Ready(());
+            };
+            let current = state.children_count.load(Ordering::Relaxed);
+            if current == 0 {
+                self.inner = None;
+                Poll::Ready(())
+            } else {
+                state.parent_waker.register(cx.waker());
+
+                let current = state.children_count.load(Ordering::Relaxed);
+                if current == 0 {
+                    self.inner = None;
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            }
+        })
+    }
+}
+
+pub(crate) struct WakeParentOnDrop {
+    inner: Arc<ChildrenCountWithParentWaker>,
+}
+
+impl Drop for WakeParentOnDrop {
+    fn drop(&mut self) {
+        let previous = self.inner.children_count.fetch_sub(1, Ordering::Relaxed);
+        let remaining = previous - 1;
+        if remaining == 0 {
+            // Wake the parent.
+            self.inner.parent_waker.wake();
+        }
+    }
+}
+
+struct ChildrenCountWithParentWaker {
+    children_count: AtomicUsize,
+    parent_waker: AtomicWaker,
 }
 
 #[cfg(test)]
@@ -78,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_1() {
-        let parent = ChildrenTracker::default();
+        let mut parent = ChildrenTracker::default();
         parent.join_all().await;
     }
 

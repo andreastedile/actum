@@ -55,7 +55,7 @@ where
         let fut = f(self.cell, self.receiver, self.actor_ref);
         let (mut cell, ret) = fut.await;
 
-        if let Some(tracker) = cell.tracker.take() {
+        if let Some(mut tracker) = cell.tracker.take() {
             tracing::trace!("joining children");
             tracker.join_all().await;
         }

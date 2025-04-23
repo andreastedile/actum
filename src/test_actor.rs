@@ -181,7 +181,7 @@ where
             }
         };
 
-        if let Some(tracker) = cell.tracker.take() {
+        if let Some(mut tracker) = cell.tracker.take() {
             tracing::trace!("joining children");
             tracker.join_all().await;
         }
