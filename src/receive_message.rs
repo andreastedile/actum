@@ -41,12 +41,12 @@ impl<M> Recv<M> {
     }
 }
 
-pub struct ExtendableMessageReceiver<M, D> {
+pub struct MessageReceiver<M, D> {
     pub(crate) m_receiver: mpsc::Receiver<M>,
     pub(crate) dependency: D,
 }
 
-impl<M, D> ExtendableMessageReceiver<M, D> {
+impl<M, D> MessageReceiver<M, D> {
     pub const fn new(m_receiver: mpsc::Receiver<M>, dependency: D) -> Self {
         Self { m_receiver, dependency }
     }

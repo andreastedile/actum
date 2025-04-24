@@ -1,5 +1,5 @@
 use crate::actor_ref::ActorRef;
-use crate::actor_task::ExtensibleActorTask;
+use crate::actor_task::ActorTask;
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::create_child::ActorCell;
 use crate::effect::create_child_effect::{
@@ -7,10 +7,9 @@ use crate::effect::create_child_effect::{
 };
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
-use crate::receive_message::ExtendableMessageReceiver;
+use crate::receive_message::MessageReceiver;
 use crate::test_actor::{
     ActorCellTestkitExtension, ActorInner, ActorTaskTestkitExtension, MessageReceiverTestkitExtension,
-    MessageReceiverWithTestkitExtension,
 };
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
@@ -98,20 +97,20 @@ pub mod testkit;
 ///     root.task.run_task().await;
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ExtensibleActorTask<M, F, Fut, Ret, (), (), ()>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, (), (), ()>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<()>, ExtendableMessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+    F: FnOnce(ActorCell<()>, MessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
     Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let m_channel = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::new(m_channel.0);
-    let receiver = ExtendableMessageReceiver::new(m_channel.1, ());
+    let receiver = MessageReceiver::new(m_channel.1, ());
 
     let cell = ActorCell::new(());
 
-    let task = ExtensibleActorTask::new(f, cell, receiver, actor_ref.clone(), (), None);
+    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), (), None);
 
     ActorToSpawn::new(task, actor_ref)
 }
@@ -120,7 +119,7 @@ pub fn actum_with_testkit<M, F, Fut, Ret>(
     f: F,
 ) -> ActumWithTestkit<
     M,
-    ExtensibleActorTask<
+    ActorTask<
         M,
         ActorInner<F, M, Ret>,
         Fut,
@@ -133,7 +132,11 @@ pub fn actum_with_testkit<M, F, Fut, Ret>(
 >
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
+    F: FnOnce(
+            ActorCell<ActorCellTestkitExtension>,
+            MessageReceiver<M, MessageReceiverTestkitExtension<M>>,
+            ActorRef<M>,
+        ) -> Fut
         + Send
         + 'static,
     Fut: Future<Output = (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static,
@@ -149,7 +152,7 @@ where
 
     let m_channel = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::new(m_channel.0);
-    let receiver = ExtendableMessageReceiver::new(
+    let receiver = MessageReceiver::new(
         m_channel.1,
         MessageReceiverTestkitExtension::new(
             recv_effect_from_actor_to_testkit_channel.0,
@@ -176,7 +179,7 @@ where
         returned_effect_from_testkit_to_actor_channel.0,
     );
 
-    let task = ExtensibleActorTask::new(
+    let task = ActorTask::new(
         ActorInner::Unboxed(f),
         cell,
         receiver,

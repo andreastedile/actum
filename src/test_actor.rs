@@ -1,5 +1,5 @@
 use crate::actor_ref::ActorRef;
-use crate::actor_task::{ExtensibleActorTask, RunTask};
+use crate::actor_task::{ActorTask, RunTask};
 use crate::actor_to_spawn::ActorToSpawn;
 use crate::create_child::{ActorCell, CreateChild};
 use crate::effect::create_child_effect::{
@@ -8,7 +8,7 @@ use crate::effect::create_child_effect::{
 use crate::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
 use crate::prelude::{ReceiveMessage, Recv};
-use crate::receive_message::ExtendableMessageReceiver;
+use crate::receive_message::MessageReceiver;
 use crate::testkit::Testkit;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
@@ -40,11 +40,11 @@ impl ActorCellTestkitExtension {
 
 impl CreateChild for ActorCell<ActorCellTestkitExtension> {
     type MessageReceiverT<M>
-        = MessageReceiverWithTestkitExtension<M>
+        = MessageReceiver<M, MessageReceiverTestkitExtension<M>>
     where
         M: Send + 'static;
     type HasRunTask<M, F, Fut, Ret>
-        = ExtensibleActorTask<
+        = ActorTask<
         M,
         ActorInner<F, M, Ret>,
         Fut,
@@ -55,14 +55,14 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
     >
     where
         M: Send + 'static,
-        F: FnOnce(Self, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut + Send + 'static,
+        F: FnOnce(Self, MessageReceiver<M, MessageReceiverTestkitExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
     async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::HasRunTask<M, F, Fut, Ret>>
     where
         M: Send + 'static,
-        F: FnOnce(Self, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut + Send + 'static,
+        F: FnOnce(Self, MessageReceiver<M, MessageReceiverTestkitExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static,
     {
@@ -76,7 +76,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
 
         let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);
-        let receiver = ExtendableMessageReceiver::new(
+        let receiver = MessageReceiver::new(
             m_channel.1,
             MessageReceiverTestkitExtension::new(
                 recv_effect_from_actor_to_testkit_channel.0,
@@ -105,7 +105,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
 
         let tracker = self.tracker.get_or_insert_default();
 
-        let mut task = ExtensibleActorTask::new(
+        let mut task = ActorTask::new(
             ActorInner::Unboxed(f),
             cell,
             receiver,
@@ -145,7 +145,7 @@ pub enum ActorInner<F, M, Ret> {
 }
 
 impl<M, F, Fut, Ret> RunTask<Ret>
-    for ExtensibleActorTask<
+    for ActorTask<
         M,
         ActorInner<F, M, Ret>,
         Fut,
@@ -156,7 +156,11 @@ impl<M, F, Fut, Ret> RunTask<Ret>
     >
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
+    F: FnOnce(
+            ActorCell<ActorCellTestkitExtension>,
+            MessageReceiver<M, MessageReceiverTestkitExtension<M>>,
+            ActorRef<M>,
+        ) -> Fut
         + Send
         + 'static,
     Fut: Future<Output = (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static,
@@ -200,7 +204,7 @@ where
 
 #[rustfmt::skip]
 pub type BoxTestActor<M, Ret> =
-    Box<dyn FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> BoxFuture<'static, (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static>;
+    Box<dyn FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiver<M, MessageReceiverTestkitExtension<M>>, ActorRef<M>) -> BoxFuture<'static, (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static>;
 
 pub(crate) struct UntypedBoxTestActor(Box<dyn Any + Send>);
 
@@ -248,8 +252,6 @@ impl<Ret> ActorTaskTestkitExtension<Ret> {
     }
 }
 
-pub type MessageReceiverWithTestkitExtension<M> = ExtendableMessageReceiver<M, MessageReceiverTestkitExtension<M>>;
-
 pub struct MessageReceiverTestkitExtension<M> {
     /// used to send recv effects from the actor under test to the corresponding testkit.
     recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
@@ -281,7 +283,7 @@ pub enum RecvFutureStateMachine {
     /// We have called [crate::actor::Actor::recv] and obtained a future.
     /// We can now poll or drop it.
     ///
-    /// - If we poll the future, it internally polls the [ExtendableMessageReceiver::recv] future, which is cancel safe,
+    /// - If we poll the future, it internally polls the [MessageReceiver::recv] future, which is cancel safe,
     /// to obtain the [Recv] value.
     /// If the latter resolves into a value, we send it to the testkit and go to S1;
     /// otherwise, we remain in S0 and arrange our future to be polled again.
@@ -315,7 +317,7 @@ pub enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M> ReceiveMessage<M> for MessageReceiverWithTestkitExtension<M>
+impl<M> ReceiveMessage<M> for MessageReceiver<M, MessageReceiverTestkitExtension<M>>
 where
     M: Send + 'static,
 {

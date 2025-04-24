@@ -1,7 +1,7 @@
 use crate::actor_ref::ActorRef;
 use crate::children_tracker::WakeParentOnDrop;
 use crate::create_child::ActorCell;
-use crate::receive_message::ExtendableMessageReceiver;
+use crate::receive_message::MessageReceiver;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -9,11 +9,11 @@ pub trait RunTask<Ret>: Send + 'static {
     fn run_task(self) -> impl Future<Output = Ret> + Send + 'static;
 }
 
-pub struct ExtensibleActorTask<M, F, Fut, Ret, C, R, D> {
+pub struct ActorTask<M, F, Fut, Ret, C, R, D> {
     pub(crate) f: F,
     ret: PhantomData<Ret>,
     fut: PhantomData<Fut>,
-    pub(crate) receiver: ExtendableMessageReceiver<M, R>,
+    pub(crate) receiver: MessageReceiver<M, R>,
     pub(crate) cell: ActorCell<C>,
     pub(crate) actor_ref: ActorRef<M>,
     pub(crate) dependency: D,
@@ -21,11 +21,11 @@ pub struct ExtensibleActorTask<M, F, Fut, Ret, C, R, D> {
     _waker: Option<WakeParentOnDrop>,
 }
 
-impl<M, F, Fut, Ret, C, R, D> ExtensibleActorTask<M, F, Fut, Ret, C, R, D> {
+impl<M, F, Fut, Ret, C, R, D> ActorTask<M, F, Fut, Ret, C, R, D> {
     pub(crate) const fn new(
         f: F,
         cell: ActorCell<C>,
-        receiver: ExtendableMessageReceiver<M, R>,
+        receiver: MessageReceiver<M, R>,
         actor_ref: ActorRef<M>,
         dependency: D,
         waker: Option<WakeParentOnDrop>,
