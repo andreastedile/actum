@@ -25,7 +25,10 @@ impl<M> ActorRef<M> {
         Self { m_sender }
     }
 
-    /// Attempt to send a message to this actor, returning the message if there was an error.
+    /// Attempts to send a message to the actor behind this reference, returning the message if there was an error.
+    ///
+    /// Errors if the [receiver](crate::receive_message::ReceiveMessage) of the intended actor has been dropped,
+    /// either manually or automatically upon return.
     pub fn try_send(&mut self, message: M) -> Result<(), M> {
         self.m_sender.try_send(message).map_err(mpsc::TrySendError::into_inner)
     }
