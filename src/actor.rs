@@ -10,11 +10,11 @@ use std::future::{Future, poll_fn};
 use std::task::Poll;
 
 impl CreateChild for ActorCell<()> {
-    type MessageReceiverT<M2>
+    type ReceiveMessageT<M2>
         = MessageReceiver<M2, ()>
     where
         M2: Send + 'static;
-    type HasRunTask<M2, F, Fut, Ret2>
+    type RunTaskT<M2, F, Fut, Ret2>
         = ActorTask<M2, F, Fut, Ret2, (), (), ()>
     where
         M2: Send + 'static,
@@ -22,7 +22,7 @@ impl CreateChild for ActorCell<()> {
         Fut: Future<Output = (Self, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
 
-    async fn create_child<M2, F, Fut, Ret2>(&mut self, f: F) -> ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>
+    async fn create_child<M2, F, Fut, Ret2>(&mut self, f: F) -> ActorToSpawn<M2, Self::RunTaskT<M2, F, Fut, Ret2>>
     where
         M2: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,

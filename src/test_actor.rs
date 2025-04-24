@@ -39,11 +39,11 @@ impl ActorCellTestkitExtension {
 }
 
 impl CreateChild for ActorCell<ActorCellTestkitExtension> {
-    type MessageReceiverT<M>
+    type ReceiveMessageT<M>
         = MessageReceiver<M, MessageReceiverTestkitExtension<M>>
     where
         M: Send + 'static;
-    type HasRunTask<M, F, Fut, Ret>
+    type RunTaskT<M, F, Fut, Ret>
         = ActorTask<
         M,
         ActorInner<F, M, Ret>,
@@ -59,7 +59,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
         Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
-    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::HasRunTask<M, F, Fut, Ret>>
+    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::RunTaskT<M, F, Fut, Ret>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M, MessageReceiverTestkitExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,

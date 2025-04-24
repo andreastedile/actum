@@ -20,14 +20,14 @@ impl<D> ActorCell<D> {
 }
 
 pub trait CreateChild: Sized + Send + 'static {
-    type MessageReceiverT<M2>: ReceiveMessage<M2> + Send + 'static
+    type ReceiveMessageT<M2>: ReceiveMessage<M2> + Send + 'static
     where
         M2: Send + 'static;
 
-    type HasRunTask<M2, F, Fut, Ret2>: RunTask<Ret2>
+    type RunTaskT<M2, F, Fut, Ret2>: RunTask<Ret2>
     where
         M2: Send + 'static,
-        F: FnOnce(Self, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self, Self::ReceiveMessageT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
 
@@ -39,10 +39,10 @@ pub trait CreateChild: Sized + Send + 'static {
     fn create_child<M2, F, Fut, Ret2>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = ActorToSpawn<M2, Self::HasRunTask<M2, F, Fut, Ret2>>> + Send + '_
+    ) -> impl Future<Output = ActorToSpawn<M2, Self::RunTaskT<M2, F, Fut, Ret2>>> + Send + '_
     where
         M2: Send + 'static,
-        F: FnOnce(Self, Self::MessageReceiverT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
+        F: FnOnce(Self, Self::ReceiveMessageT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Ret2)> + Send + 'static,
         Ret2: Send + 'static;
 }
