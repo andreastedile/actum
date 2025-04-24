@@ -10,26 +10,26 @@ use std::future::{Future, poll_fn};
 use std::task::Poll;
 
 impl CreateChild for ActorCell<()> {
-    type ReceiveMessageT<M2>
-        = MessageReceiver<M2, ()>
+    type ReceiveMessageT<M>
+        = MessageReceiver<M, ()>
     where
-        M2: Send + 'static;
-    type RunTaskT<M2, F, Fut, Ret2>
-        = ActorTask<M2, F, Fut, Ret2, (), (), ()>
+        M: Send + 'static;
+    type RunTaskT<M, F, Fut, Ret>
+        = ActorTask<M, F, Fut, Ret, (), (), ()>
     where
-        M2: Send + 'static,
-        F: FnOnce(Self, MessageReceiver<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret2)> + Send + 'static,
-        Ret2: Send + 'static;
+        M: Send + 'static,
+        F: FnOnce(Self, MessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 
-    async fn create_child<M2, F, Fut, Ret2>(&mut self, f: F) -> ActorToSpawn<M2, Self::RunTaskT<M2, F, Fut, Ret2>>
+    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::RunTaskT<M, F, Fut, Ret>>
     where
-        M2: Send + 'static,
-        F: FnOnce(Self, MessageReceiver<M2, ()>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret2)> + Send + 'static,
-        Ret2: Send + 'static,
+        M: Send + 'static,
+        F: FnOnce(Self, MessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
+        Ret: Send + 'static,
     {
-        let m_channel = mpsc::channel::<M2>(100);
+        let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);
         let receiver = MessageReceiver::new(m_channel.1, ());
 

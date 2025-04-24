@@ -20,29 +20,29 @@ impl<D> ActorCell<D> {
 }
 
 pub trait CreateChild: Sized + Send + 'static {
-    type ReceiveMessageT<M2>: ReceiveMessage<M2> + Send + 'static
+    type ReceiveMessageT<M>: ReceiveMessage<M> + Send + 'static
     where
-        M2: Send + 'static;
+        M: Send + 'static;
 
-    type RunTaskT<M2, F, Fut, Ret2>: RunTask<Ret2>
+    type RunTaskT<M, F, Fut, Ret>: RunTask<Ret>
     where
-        M2: Send + 'static,
-        F: FnOnce(Self, Self::ReceiveMessageT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret2)> + Send + 'static,
-        Ret2: Send + 'static;
+        M: Send + 'static,
+        F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 
     /// Creates a child actor.
     /// The actor should then be spawned onto the runtime of choice.
     ///
     /// See the [actum](crate::actum) function for passing a function pointer, passing a closure and
     /// for passing arguments to the actor.
-    fn create_child<M2, F, Fut, Ret2>(
+    fn create_child<M, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = ActorToSpawn<M2, Self::RunTaskT<M2, F, Fut, Ret2>>> + Send + '_
+    ) -> impl Future<Output = ActorToSpawn<M, Self::RunTaskT<M, F, Fut, Ret>>> + Send + '_
     where
-        M2: Send + 'static,
-        F: FnOnce(Self, Self::ReceiveMessageT<M2>, ActorRef<M2>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret2)> + Send + 'static,
-        Ret2: Send + 'static;
+        M: Send + 'static,
+        F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
+        Ret: Send + 'static;
 }
