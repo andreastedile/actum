@@ -2,9 +2,9 @@ pub mod create_child_effect;
 pub mod recv_effect;
 pub mod returned_effect;
 
-use crate::effect::create_child_effect::{UntypedCreateChildEffect, UntypedCreateChildEffectImpl};
-use crate::effect::recv_effect::{RecvEffect, RecvEffectImpl};
-use crate::effect::returned_effect::{ReturnedEffect, ReturnedEffectImpl};
+use crate::actor_test::effect::create_child_effect::{UntypedCreateChildEffect, UntypedCreateChildEffectImpl};
+use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectImpl};
+use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectImpl};
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 

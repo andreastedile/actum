@@ -1,23 +1,8 @@
-use crate::actor_ref::ActorRef;
-use crate::actor_task::RunTask;
-use crate::actor_to_spawn::ActorToSpawn;
-use crate::children_tracker::ChildrenTracker;
-use crate::receive_message::ReceiveMessage;
+use crate::core::actor_ref::ActorRef;
+use crate::core::actor_task::RunTask;
+use crate::core::actor_to_spawn::ActorToSpawn;
+use crate::core::receive_message::ReceiveMessage;
 use std::future::Future;
-
-pub struct ActorCell<D> {
-    pub(crate) tracker: Option<ChildrenTracker>,
-    pub(crate) dependency: D,
-}
-
-impl<D> ActorCell<D> {
-    pub const fn new(dependency: D) -> Self {
-        Self {
-            tracker: None,
-            dependency,
-        }
-    }
-}
 
 pub trait CreateChild: Sized + Send + 'static {
     type ReceiveMessageT<M>: ReceiveMessage<M> + Send + 'static

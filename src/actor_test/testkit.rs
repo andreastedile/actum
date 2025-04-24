@@ -1,14 +1,14 @@
-use crate::effect::create_child_effect::{
+use crate::actor_test::effect::create_child_effect::{
     CreateChildEffectFromTestkitToActor, UntypedCreateChildEffect, UntypedCreateChildEffectFromActorToTestkit,
     UntypedCreateChildEffectImpl,
 };
-use crate::effect::recv_effect::{
+use crate::actor_test::effect::recv_effect::{
     RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, RecvEffectImpl,
 };
-use crate::effect::returned_effect::{
+use crate::actor_test::effect::returned_effect::{
     ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor, ReturnedEffectImpl,
 };
-use crate::effect::{Effect, EffectImpl};
+use crate::actor_test::effect::{Effect, EffectImpl};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use std::any::Any;
@@ -517,8 +517,9 @@ impl UntypedTestkit {
 
 #[cfg(test)]
 mod tests {
-    use crate::actor_task::RunTask;
-    use crate::{ActumWithTestkit, actum_with_testkit};
+    use crate::actor_test::actum_with_testkit::ActumWithTestkit;
+    use crate::actor_test::actum_with_testkit::actum_with_testkit;
+    use crate::core::actor_task::RunTask;
 
     #[tokio::test]
     async fn test_that_state_is_set_to_none_after_the_returned_effect_is_received() {

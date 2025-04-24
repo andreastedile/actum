@@ -19,8 +19,8 @@ where
     let span = tracing::trace_span!("child");
     tokio::spawn(child.task.run_task().instrument(span));
 
-    // we return immediately after having spawned the child actor.
-    // even though the child actor is sleeping, it will not outlive us.
+    // we return immediately after having spawned the child actor_cell.
+    // even though the child actor_cell is sleeping, it will not outlive us.
     (cell, ())
 }
 

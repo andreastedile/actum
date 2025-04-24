@@ -1,5 +1,5 @@
-use crate::test_actor::{BoxTestActor, UntypedBoxTestActor};
-use crate::testkit::{Testkit, UntypedTestkit};
+use crate::actor_test::run_task::{BoxTestActor, UntypedBoxTestActor};
+use crate::actor_test::testkit::{Testkit, UntypedTestkit};
 use std::fmt::{Debug, Formatter};
 
 pub(crate) struct UntypedCreateChildEffectImpl {

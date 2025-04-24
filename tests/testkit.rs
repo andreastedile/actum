@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{Instrument, info_span};
 
 /// Non-cloneable type.
-/// If the actor receives it, it certainly could not have been cloned by Actum.
+/// If the actor_cell receives it, it certainly could not have been cloned by Actum.
 struct NonClone;
 
 #[tokio::test]
@@ -93,10 +93,10 @@ async fn test_recv_effect_discard() {
 
     // Send two messages and discard the first. Only the second can be received.
 
-    tracing::info!("sending 1 to actor");
+    tracing::info!("sending 1 to actor_cell");
     let _ = actor_ref.try_send(1);
 
-    tracing::info!("sending 2 to actor");
+    tracing::info!("sending 2 to actor_cell");
     let _ = actor_ref.try_send(2);
 
     let _ = testkit

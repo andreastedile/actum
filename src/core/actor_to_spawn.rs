@@ -1,4 +1,4 @@
-use crate::actor_ref::ActorRef;
+use crate::core::actor_ref::ActorRef;
 
 pub struct ActorToSpawn<M, RT> {
     pub task: RT,
