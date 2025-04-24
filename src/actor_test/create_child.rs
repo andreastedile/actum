@@ -9,14 +9,14 @@ use crate::actor_test::run_task::ActorTaskTestkitExtension;
 use crate::core::actor_cell::ActorCell;
 use crate::core::actor_task::ActorTask;
 use crate::core::message_receiver::MessageReceiver;
-use crate::prelude::{ActorRef, ActorToSpawn, CreateChild, Testkit};
+use crate::prelude::{ActorRef, CreateActorResult, CreateChild, Testkit};
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 
 pub struct ActorCellTestkitExtension {
-    /// used to send "create child effects" from the actor_cell under test to the corresponding testkit.
+    /// used to send "create child effects" from the actor under test to the corresponding testkit.
     create_child_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedCreateChildEffectFromActorToTestkit>,
-    /// used to receive "create child effects" from the testkit to the actor_cell.
+    /// used to receive "create child effects" from the testkit to the actor.
     create_child_effect_from_testkit_to_actor_receiver: mpsc::Receiver<CreateChildEffectFromTestkitToActor>,
 }
 
@@ -37,6 +37,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
         = MessageReceiver<M, MessageReceiverTestkitExtension<M>>
     where
         M: Send + 'static;
+
     type RunTaskT<M, F, Fut, Ret>
         = ActorTask<
         M,
@@ -53,7 +54,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
         Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
-    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::RunTaskT<M, F, Fut, Ret>>
+    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Ret>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M, MessageReceiverTestkitExtension<M>>, ActorRef<M>) -> Fut + Send + 'static,
@@ -129,6 +130,6 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
             task.f = ActorInner::Boxed(actor);
         };
 
-        ActorToSpawn::new(task, actor_ref)
+        CreateActorResult::new(task, actor_ref)
     }
 }

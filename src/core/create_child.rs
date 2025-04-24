@@ -1,6 +1,6 @@
 use crate::core::actor_ref::ActorRef;
 use crate::core::actor_task::RunTask;
-use crate::core::actor_to_spawn::ActorToSpawn;
+use crate::core::actor_to_spawn::CreateActorResult;
 use crate::core::receive_message::ReceiveMessage;
 use std::future::Future;
 
@@ -54,7 +54,7 @@ pub trait CreateChild: Sized + Send + 'static {
     ///     C: CreateChild,
     ///     R: ReceiveMessage<Response>,
     /// {
-    ///     let ActorToSpawn { task, mut actor_ref } = cell.create_child(child_actor).await;
+    ///     let CreateActorResult { task, mut actor_ref } = cell.create_child(child_actor).await;
     ///     let _handle = tokio::spawn(task.run_task());
     ///
     ///     // do other work...
@@ -84,14 +84,14 @@ pub trait CreateChild: Sized + Send + 'static {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let ActorToSpawn { task, .. } = actum(root_actor);
+    ///     let CreateActorResult { task, .. } = actum(root_actor);
     ///     task.run_task().await;
     /// }
     /// ```
     fn create_child<M, F, Fut, Ret>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = ActorToSpawn<M, Self::RunTaskT<M, F, Fut, Ret>>> + Send + '_
+    ) -> impl Future<Output = CreateActorResult<M, Self::RunTaskT<M, F, Fut, Ret>>> + Send + '_
     where
         M: Send + 'static,
         F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,

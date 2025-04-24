@@ -1,7 +1,7 @@
 use crate::core::actor_cell::ActorCell;
 use crate::core::actor_ref::ActorRef;
 use crate::core::actor_task::ActorTask;
-use crate::core::actor_to_spawn::ActorToSpawn;
+use crate::core::actor_to_spawn::CreateActorResult;
 use crate::core::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 
@@ -28,7 +28,7 @@ use futures::channel::mpsc;
 /// #[tokio::main]
 /// async fn main() {
 ///     let numbers = vec![1, 2, 3]; // gets moved into the closure
-///     let ActorToSpawn { task, mut actor_ref } = actum::<String, _, _, u64>(|cell, mut receiver, _me| async move {
+///     let CreateActorResult { task, mut actor_ref } = actum::<String, _, _, u64>(|cell, mut receiver, _me| async move {
 ///         let m = receiver.recv().await.into_message().unwrap();
 ///         println!("received: {}", m);
 ///
@@ -62,7 +62,7 @@ use futures::channel::mpsc;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let ActorToSpawn { task, mut actor_ref } = actum(root_actor);
+///     let CreateActorResult { task, mut actor_ref } = actum(root_actor);
 ///     actor_ref.try_send(1).unwrap();
 ///     actor_ref.try_send(2).unwrap();
 ///     actor_ref.try_send(3).unwrap();
@@ -70,7 +70,7 @@ use futures::channel::mpsc;
 ///     println!("sum = {}", sum);
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, (), (), ()>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> CreateActorResult<M, ActorTask<M, F, Fut, Ret, (), (), ()>>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell<()>, MessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
@@ -85,5 +85,5 @@ where
 
     let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), (), None);
 
-    ActorToSpawn::new(task, actor_ref)
+    CreateActorResult::new(task, actor_ref)
 }

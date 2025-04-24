@@ -9,7 +9,7 @@ pub use crate::actor_test::effect::returned_effect::ReturnedEffect;
 pub use crate::actor_test::testkit::Testkit;
 pub use crate::core::actor_ref::ActorRef;
 pub use crate::core::actor_task::RunTask;
-pub use crate::core::actor_to_spawn::ActorToSpawn;
+pub use crate::core::actor_to_spawn::CreateActorResult;
 pub use crate::core::create_child::CreateChild;
 pub use crate::core::receive_message::ReceiveMessage;
 pub use crate::core::receive_message::Recv;
