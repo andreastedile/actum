@@ -28,46 +28,46 @@ impl<M> MessageReceiverTestkitExtension<M> {
     }
 }
 
-/// The future returned by the [recv](ReceiveMessage::recv) method
-/// can be dropped before being polled to completion; for example, when it races with a timeout.
-/// This fact, and the fact that the result of the future is temporarily transferred to the testkit,
-/// makes future not cancel safe.
+/// Tracks the state of the future returned by the [recv](ReceiveMessage::recv) method to make it cancel safe.
+///
+/// The future returned by the [recv](ReceiveMessage::recv) method can be dropped before being polled to completion.
+/// This can happen, for example, if it races with a timeout.
+/// Furthermore, the result of the future is temporarily transferred to the testkit.
+/// If the result of the future is transferred to the testkit and the future is dropped, then the actor and the testkit go out of sync.
 #[derive(Debug, Eq, PartialEq)]
-pub enum RecvFutureStateMachine {
-    /// We have called [crate::actor::create_child::Actor::recv] and obtained a future.
+enum RecvFutureStateMachine {
+    /// We have called [recv][ReceiveMessage::recv] and obtained a future.
     /// We can now poll or drop it.
     ///
-    /// - If we poll the future, it internally polls the [MessageReceiver::recv] future, which is cancel safe,
-    /// to obtain the [Recv] value.
-    /// If the latter resolves into a value, we send it to the testkit and go to S1;
-    /// otherwise, we remain in S0 and arrange our future to be polled again.
+    /// - If we poll the future, it internally polls the [Receiver](https://docs.rs/futures/latest/futures/channel/mpsc/struct.Receiver.html), which is cancel safe, to obtain the [Recv] value.
+    ///   If the latter resolves into a value, we send it to the testkit and go to S1;
+    ///   otherwise, we remain in S0 and arrange our future to be polled again.
     ///
     /// - If we drop the future, we remain in S0.
-    /// If we create a new future afterward, we will resume from there.
+    ///   If we create a new future afterward, we will resume from there.
     S0,
     /// The testkit has received the [Recv] value from us.
     /// We can now poll or drop our future.
     ///
     /// - If we poll the future, it attempts to receive a response with the value back from the testkit.
-    /// If we receive those, we resolve our future into the value and go to S0;
-    /// otherwise, we remain in S1 and arrange our future to be polled again.
+    ///   If we receive those, we resolve our future into the value and go to S0;
+    ///   otherwise, we remain in S1 and arrange our future to be polled again.
     ///
     /// - If we drop the future, we go to S2.
-    /// If we create a new future afterward, we will resume from there.
+    ///   If we create a new future afterward, we will resume from there.
     S1,
     /// The testkit still has the [Recv] value we sent to it.
     /// We can now poll or drop our future.
     ///
     /// - If we poll the future, it attempts to receive a response and the value back from the testkit.
-    /// If we receive those, we resend the value to the testkit and go to S1;
-    /// otherwise, we remain in S2 and arrange our future to be polled again.
-    /// The reason we resend the value is that the response we have just received corresponds to a
-    /// future which we previously dropped and is thus now meaningless.
-    /// Note that **we resend the very same value**, because the [Recv] could contain a message which
-    /// we do not want to lose.
+    ///   If we receive those, we resend the value to the testkit and go to S1;
+    ///   otherwise, we remain in S2 and arrange our future to be polled again.
+    ///   The reason we resend the value is that the response we have just received corresponds to a
+    ///   future which we previously dropped and is thus now meaningless.
+    ///   Note that **we resend the very same value**, because the [Recv] could contain a message which we do not want to lose.
     ///
     /// - If we drop the future, we remain in S2.
-    /// If we create a new future afterward, we will resume from there.
+    ///   If we create a new future afterward, we will resume from there.
     S2,
 }
 

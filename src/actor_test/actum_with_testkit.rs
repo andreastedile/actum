@@ -15,7 +15,7 @@ use futures::channel::{mpsc, oneshot};
 
 /// Instantiates the actor tree hierarchy with instrumentation for testing the behavior of the actors in the tree hierarchy.
 ///
-/// The documentation of [actum] applies to this function as well, with the difference that the
+/// The documentation of [actum](crate::actor::actum::actum) applies to this function as well, with the difference that the
 /// returned struct also contains the [Testkit] for testing the behavior of the root actor.
 ///
 /// For any child actor created from within the root actor, you can obtain its corresponding testkit

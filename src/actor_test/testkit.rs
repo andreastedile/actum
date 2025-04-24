@@ -288,7 +288,7 @@ impl<M, Ret> Testkit<M, Ret> {
     /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
     ///
     /// # Examples
-    /// Test whether the actor called [create_child](crate::create_child::CreateChild::create_child).
+    /// Test whether the actor called [create_child](crate::core::create_child::CreateChild::create_child).
     ///
     /// # Example
     /// ```

@@ -8,7 +8,7 @@ use futures::channel::mpsc;
 /// Instantiates the actor tree hierarchy.
 ///
 /// The argument of this function is the root actor of the actor tree hierarchy.
-/// From within the root actor, you can [create](prelude::CreateChild::create_child) new child actors.
+/// From within the root actor, you can [create](crate::core::create_child::CreateChild::create_child) new child actors.
 /// Therefore, this function effectively instantiates the whole actor tree hierarchy.
 ///
 /// Returns a struct containing the [ActorRef] of the root actor (generic over parameter `M`) and a special control structure.

@@ -17,7 +17,7 @@ pub trait CreateChild: Sized + Send + 'static {
         Ret: Send + 'static;
 
     /// Creates a child actor.
-    /// The documentation of [actum](crate::actum) applies to this function as well.
+    /// The documentation of [actum](crate::actor::actum::actum) applies to this function as well.
     ///
     /// From within the child actor, you can [create](CreateChild::create_child) new child actors of its own.
     /// Therefore, this function effectively instantiates an actor tree hierarchy rooted in the child actor.
