@@ -27,74 +27,69 @@ mod receive_message;
 pub mod test_actor;
 pub mod testkit;
 
-/// Creates the root actor of the actor tree hierarchy.
-/// The actor should then be spawned onto the runtime of choice.
+/// Instantiates the actor tree hierarchy.
 ///
-/// Compared to using the [testkit](actum_with_testkit) function, this function does not incur any overhead.
+/// The argument of this function is the root actor of the actor tree hierarchy.
+/// From within the root actor, you can [create](create_child::CreateChild::create_child) new child actors.
+/// Therefore, this function effectively instantiates the whole actor tree hierarchy.
+///
+/// Returns a struct containing the [ActorRef] of the root actor (generic over parameter `M`) and a special control structure.
+/// The control structure has a method that returns a future which runs the root actor, joins its child actors (if any), and resolves with the value returned by the root actor (generic over parameter `Ret`).
+/// Once this future resolves, the entire actor tree hierarchy has returned.
+/// This future is **runtime agnostic**.
+///
+/// Note that you can send messages to the root actor before awaiting the future.
 ///
 /// # Examples
 ///
-/// ## Pass a function pointer
-/// ```
-/// use actum::prelude::*;
+/// You can pass a closure. In this way, you can also pass values to the actor.
 ///
-/// async fn root<C, R>(mut cell: C, mut receiver: R, mut me: ActorRef<u64>) -> (C, ())
-/// where
-///     C: CreateChild,
-///     R: ReceiveMessage<u64>,
-/// {
-///     let m = receiver.recv().await.into_message().unwrap();
-///     println!("{}", m);
-///     (cell, ())
-/// }
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut root = actum(root);
-///     root.actor_ref.try_send(1).unwrap();
-///     root.task.run_task().await;
-/// }
-/// ```
-///
-/// ## Pass a closure
-/// ```
+/// ```rust
 /// use actum::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut root = actum::<u64, _, _, _>(|mut cell, mut receiver, me| async move {
+///     let numbers = vec![1, 2, 3]; // gets moved into the closure
+///     let ActorToSpawn { task, mut actor_ref } = actum::<String, _, _, u64>(|cell, mut receiver, _me| async move {
 ///         let m = receiver.recv().await.into_message().unwrap();
-///         println!("{}", m);
-///         (cell, ())
+///         println!("received: {}", m);
+///
+///         let sum = numbers.iter().sum();
+///         (cell, sum)
 ///     });
-///     root.actor_ref.try_send(1).unwrap();
-///     root.task.run_task().await;
+///     actor_ref.try_send("hello from main!".to_string()).unwrap();
+///     let sum = task.run_task().await;
+///     println!("sum = {}", sum);
 /// }
 /// ```
 ///
-/// ## Pass arguments to the actor
-/// ```
+/// You can pass a function pointer.
+///
+/// ```rust
 /// use actum::prelude::*;
 ///
-/// async fn root<C, R>(mut cell: C, mut receiver: R, me: ActorRef<u64>, mut vec: Vec<u64>) -> (C, ())
+/// async fn root_actor<C, R>(cell: C, mut receiver: R, _me: ActorRef<u64>) -> (C, u64)
 /// where
 ///     C: CreateChild,
 ///     R: ReceiveMessage<u64>,
 /// {
-///     let m = receiver.recv().await.into_message().unwrap();
-///     vec.push(m);
-///     for m in vec {
-///         println!("{}", m);
+///     let mut sum = 0;
+///     for _ in 0..3 {
+///         let m = receiver.recv().await.into_message().unwrap();
+///         println!("received: {}", m);
+///         sum += m;
 ///     }
-///     (cell, ())
+///     (cell, sum)
 /// }
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let vec = vec![1, 2, 3];
-///     let mut root = actum(|cell, receiver, me| root(cell, receiver, me, vec));
-///     root.actor_ref.try_send(4).unwrap();
-///     root.task.run_task().await;
+///     let ActorToSpawn { task, mut actor_ref } = actum(root_actor);
+///     actor_ref.try_send(1).unwrap();
+///     actor_ref.try_send(2).unwrap();
+///     actor_ref.try_send(3).unwrap();
+///     let sum = task.run_task().await;
+///     println!("sum = {}", sum);
 /// }
 /// ```
 pub fn actum<M, F, Fut, Ret>(f: F) -> ActorToSpawn<M, ActorTask<M, F, Fut, Ret, (), (), ()>>
@@ -115,6 +110,17 @@ where
     ActorToSpawn::new(task, actor_ref)
 }
 
+/// Instantiates the actor tree hierarchy with instrumentation for testing the behavior of the actors in the tree hierarchy.
+///
+/// The documentation of [actum] applies to this function as well, with the difference that the
+/// returned struct also contains the [Testkit] for testing the behavior of the root actor.
+///
+/// For any child actor created from within the root actor, you can obtain its corresponding testkit
+/// through the testkit of the root actor (see [expect_create_child_effect](Testkit::expect_create_child_effect)).
+///
+/// # Examples
+///
+/// See the documentation of [Testkit] and its methods.
 pub fn actum_with_testkit<M, F, Fut, Ret>(
     f: F,
 ) -> ActumWithTestkit<
@@ -195,6 +201,7 @@ where
     }
 }
 
+/// Returned by [actum_with_testkit].
 pub struct ActumWithTestkit<M, RT, Ret> {
     pub task: RT,
     pub actor_ref: ActorRef<M>,
