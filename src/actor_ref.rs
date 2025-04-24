@@ -1,7 +1,16 @@
 use futures::channel::mpsc;
+use std::fmt::{Debug, Formatter};
 
 pub struct ActorRef<M> {
     m_sender: mpsc::Sender<M>,
+}
+
+impl<M> Debug for ActorRef<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActorRef")
+            .field("closed", &self.m_sender.is_closed())
+            .finish()
+    }
 }
 
 impl<M> Clone for ActorRef<M> {
