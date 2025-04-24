@@ -27,7 +27,7 @@ pub struct ActorCellTestkitExtension {
 }
 
 impl ActorCellTestkitExtension {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         create_child_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedCreateChildEffectFromActorToTestkit>,
         create_child_effect_from_testkit_to_actor_receiver: mpsc::Receiver<CreateChildEffectFromTestkitToActor>,
     ) -> Self {
@@ -55,19 +55,15 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
     >
     where
         M: Send + 'static,
-        F: FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
-            + Send
-            + 'static,
-        Fut: Future<Output = (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static,
+        F: FnOnce(Self, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static;
 
     async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> ActorToSpawn<M, Self::HasRunTask<M, F, Fut, Ret>>
     where
         M: Send + 'static,
-        F: FnOnce(ActorCell<ActorCellTestkitExtension>, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut
-            + Send
-            + 'static,
-        Fut: Future<Output = (ActorCell<ActorCellTestkitExtension>, Ret)> + Send + 'static,
+        F: FnOnce(Self, MessageReceiverWithTestkitExtension<M>, ActorRef<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = (Self, Ret)> + Send + 'static,
         Ret: Send + 'static,
     {
         let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
@@ -88,7 +84,7 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
             ),
         );
 
-        let cell = ActorCell::new(ActorCellTestkitExtension::new(
+        let cell = Self::new(ActorCellTestkitExtension::new(
             create_child_effect_from_actor_to_testkit_channel.0,
             create_child_effect_from_testkit_to_actor_channel.1,
         ));
@@ -280,8 +276,6 @@ impl<M> MessageReceiverTestkitExtension<M> {
 /// can be dropped before being polled to completion; for example, when it races with a timeout.
 /// This fact, and the fact that the result of the future is temporarily transferred to the testkit,
 /// makes future not cancel safe.
-///
-/// This state machine makes the future cancel safe.
 #[derive(Debug, Eq, PartialEq)]
 pub enum RecvFutureStateMachine {
     /// We have called [crate::actor::Actor::recv] and obtained a future.

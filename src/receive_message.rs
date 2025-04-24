@@ -47,7 +47,7 @@ pub struct ExtendableMessageReceiver<M, D> {
 }
 
 impl<M, D> ExtendableMessageReceiver<M, D> {
-    pub fn new(m_receiver: mpsc::Receiver<M>, dependency: D) -> Self {
+    pub const fn new(m_receiver: mpsc::Receiver<M>, dependency: D) -> Self {
         Self { m_receiver, dependency }
     }
 }
