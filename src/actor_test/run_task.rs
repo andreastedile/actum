@@ -9,7 +9,6 @@ use futures::channel::oneshot;
 use futures::future::BoxFuture;
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::marker::PhantomData;
 
 impl<M, F, Fut, Ret> RunTask<Ret>
     for ActorTask<
@@ -98,12 +97,8 @@ impl UntypedBoxTestActor {
 }
 
 pub struct ActorTaskTestkitExtension<Ret> {
-    /// used to send returned effects from the actor under test to the corresponding testkit.
     returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
-    /// used to receive returned effects from the testkit to the actor.
     returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
-
-    _ret: PhantomData<Ret>,
 }
 
 impl<Ret> ActorTaskTestkitExtension<Ret> {
@@ -114,7 +109,6 @@ impl<Ret> ActorTaskTestkitExtension<Ret> {
         Self {
             returned_effect_from_actor_to_testkit_sender,
             returned_effect_from_testkit_to_actor_receiver,
-            _ret: PhantomData,
         }
     }
 }

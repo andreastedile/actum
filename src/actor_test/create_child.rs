@@ -14,9 +14,7 @@ use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 
 pub struct ActorCellTestkitExtension {
-    /// used to send "create child effects" from the actor under test to the corresponding testkit.
     create_child_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedCreateChildEffectFromActorToTestkit>,
-    /// used to receive "create child effects" from the testkit to the actor.
     create_child_effect_from_testkit_to_actor_receiver: mpsc::Receiver<CreateChildEffectFromTestkitToActor>,
 }
 

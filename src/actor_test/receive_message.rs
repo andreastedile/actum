@@ -7,11 +7,8 @@ use std::future::poll_fn;
 use std::task::{Poll, ready};
 
 pub struct MessageReceiverTestkitExtension<M> {
-    /// used to send recv effects from the actor under test to the corresponding testkit.
     recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
-    /// used to receive recv effects from the testkit to the actor.
     recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
-
     state: RecvFutureStateMachine,
 }
 
@@ -30,10 +27,52 @@ impl<M> MessageReceiverTestkitExtension<M> {
 
 /// Tracks the state of the future returned by the [recv](ReceiveMessage::recv) method to make it cancel safe.
 ///
-/// The future returned by the [recv](ReceiveMessage::recv) method can be dropped before being polled to completion.
-/// This can happen, for example, if it races with a timeout.
-/// Furthermore, the result of the future is temporarily transferred to the testkit.
-/// If the result of the future is transferred to the testkit and the future is dropped, then the actor and the testkit go out of sync.
+/// The future returned by the [recv](ReceiveMessage::recv) method temporarily transfers the [Recv] value to the testkit.
+/// However, the future can be dropped before receiving the value back from the testkit.
+/// In this case, the actor would lose a message and become out of sync with the testkit.
+///
+/// # Example
+///
+/// ```rust
+/// use actum::prelude::{ActumWithTestkit, ReceiveMessage, RunTask, actum_with_testkit};
+/// use std::time::Duration;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let ActumWithTestkit {
+///         task,
+///         mut actor_ref,
+///         mut testkit,
+///     } = actum_with_testkit::<u32, _, _, ()>(|cell, mut receiver, _me| async move {
+///         tokio::time::timeout(Duration::from_millis(500), receiver.recv())
+///             .await
+///             .unwrap_err();
+///         let m1 = receiver.recv().await.into_message().unwrap();
+///         let m2 = receiver.recv().await.into_message().unwrap();
+///         assert_eq!(m1, 1);
+///         assert_eq!(m2, 2);
+///
+///         (cell, ())
+///     });
+///
+///     actor_ref.try_send(1).unwrap();
+///     actor_ref.try_send(2).unwrap();
+///
+///     let root_handle = tokio::spawn(task.run_task());
+///
+///     let _ = testkit
+///         .expect_recv_effect(async |_| {
+///             // simulate a delay
+///             tokio::time::sleep(Duration::from_millis(1000)).await;
+///         })
+///         .await;
+///     let _ = testkit.expect_recv_effect(async |_| {}).await;
+///     let _ = testkit.expect_recv_effect(async |_| {}).await;
+///     let _ = testkit.expect_returned_effect(async |_| {}).await;
+///
+///     root_handle.await.unwrap();
+/// }
+/// ```
 #[derive(Debug, Eq, PartialEq)]
 enum RecvFutureStateMachine {
     /// We have called [recv][ReceiveMessage::recv] and obtained a future.
