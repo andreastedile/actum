@@ -16,5 +16,6 @@ enum-as-inner = "0.6.1"
 either = "1.15.0"
 
 [dev-dependencies]
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time", "net"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+either = "1.15.0"

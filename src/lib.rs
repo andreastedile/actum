@@ -5,3 +5,4 @@ pub mod actor_test;
 /// Definition of core traits and structs.
 pub mod core;
 pub mod prelude;
+pub mod remoting;
