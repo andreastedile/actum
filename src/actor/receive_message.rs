@@ -8,7 +8,7 @@ impl<M> ReceiveMessage<M> for MessageReceiver<M, ()>
 where
     M: Send + 'static,
 {
-    fn recv(&mut self) -> impl Future<Output = Recv<M>> + '_ {
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + Unpin + '_ {
         poll_fn(|cx| {
             //
             match self.m_receiver.poll_next_unpin(cx) {

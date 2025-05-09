@@ -7,7 +7,7 @@ where
     M: Send + 'static,
 {
     /// Asynchronously receive the next message.
-    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + '_;
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + Unpin + '_;
 }
 
 /// Value returned by the [recv](ReceiveMessage::recv) method.

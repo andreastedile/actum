@@ -114,7 +114,7 @@ impl<M> ReceiveMessage<M> for MessageReceiver<M, MessageReceiverTestkitExtension
 where
     M: Send + 'static,
 {
-    fn recv(&mut self) -> impl Future<Output = Recv<M>> + '_ {
+    fn recv(&mut self) -> impl Future<Output = Recv<M>> + Send + Unpin + '_ {
         if self.dependency.state == RecvFutureStateMachine::S1 {
             // If the state is S1, it means that the previous future was dropped while it was waiting for the effect to
             // come back from the testkit.
