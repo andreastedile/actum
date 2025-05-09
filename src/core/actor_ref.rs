@@ -43,49 +43,35 @@ impl<M> ActorRef<M> {
         self.m_sender.try_send(message).map_err(mpsc::TrySendError::into_inner)
     }
 
-    pub fn narrow<Subtype>(mut self) -> MappedActorRef<Subtype>
+    pub fn narrow<Subtype, F>(mut self, f: F) -> MappedActorRef<Subtype>
     where
-        M: From<Subtype> + Send + 'static,
-        Subtype: TryFrom<M>,
+        M: Send + 'static,
+        F: Fn(Subtype) -> M + Send + 'static,
     {
         MappedActorRef {
             f: Arc::new(Mutex::new(move |subtype: Subtype| {
-                let m = subtype.into();
-                self.try_send(m).map_err(|m| {
-                    m.try_into().unwrap_or_else(|_| {
-                        panic!(
-                            "conversion failed from {} to {}",
-                            std::any::type_name::<M>(),
-                            std::any::type_name::<Subtype>()
-                        )
-                    })
-                })
+                let m = f(subtype);
+                self.try_send(m).is_ok()
             })),
         }
     }
 
-    pub fn widen<Supertype>(mut self) -> MappedActorRef<Supertype>
+    pub fn widen<Supertype, F>(mut self, f: F) -> MappedActorRef<Supertype>
     where
-        M: TryFrom<Supertype> + Send + 'static,
-        Supertype: From<M>,
+        M: Send + 'static,
+        F: Fn(Supertype) -> M + Send + 'static,
     {
         MappedActorRef {
             f: Arc::new(Mutex::new(move |supertype: Supertype| {
-                let m = supertype.try_into().unwrap_or_else(|_| {
-                    panic!(
-                        "conversion failed from {} to {}",
-                        std::any::type_name::<Supertype>(),
-                        std::any::type_name::<M>()
-                    )
-                });
-                self.try_send(m).map_err(|m| m.into())
+                let m = f(supertype);
+                self.try_send(m).is_ok()
             })),
         }
     }
 }
 
 pub struct MappedActorRef<M> {
-    f: Arc<Mutex<dyn FnMut(M) -> Result<(), M> + Send + 'static>>,
+    f: Arc<Mutex<dyn FnMut(M) -> bool + Send + 'static>>,
 }
 
 impl<M> Clone for MappedActorRef<M> {
@@ -109,7 +95,7 @@ impl<M> Debug for MappedActorRef<M> {
 }
 
 impl<M> MappedActorRef<M> {
-    pub fn try_send(&mut self, message: M) -> Result<(), M> {
+    pub fn try_send(&mut self, message: M) -> bool {
         let mut f = self.f.lock().unwrap();
         f(message)
     }
@@ -141,34 +127,26 @@ mod actorref_mapping_tests {
         }
     }
 
-    impl TryFrom<ABC> for BC {
-        type Error = ();
-
-        fn try_from(value: ABC) -> Result<Self, Self::Error> {
-            match value {
-                ABC::A => Err(()),
-                ABC::B => Ok(BC::B),
-                ABC::C => Ok(BC::C),
-            }
-        }
-    }
-
     #[test]
     fn test_actorref_narrow() {
         let m_channel = mpsc::channel::<ABC>(10);
         let actor_ref = ActorRef { m_sender: m_channel.0 };
-        let mut narrower = actor_ref.narrow::<BC>();
-        narrower.try_send(BC::B).unwrap();
-        narrower.try_send(BC::C).unwrap();
+        let mut narrower = actor_ref.narrow::<BC, _>(|bc| bc.into());
+        assert!(narrower.try_send(BC::B));
+        assert!(narrower.try_send(BC::C));
     }
 
     #[test]
     fn test_actorref_widen() {
         let m_channel = mpsc::channel::<BC>(10);
         let actor_ref = ActorRef { m_sender: m_channel.0 };
-        let mut wider = actor_ref.widen::<ABC>();
-        wider.try_send(ABC::B).unwrap();
-        wider.try_send(ABC::C).unwrap();
+        let mut wider = actor_ref.widen::<ABC, _>(|abc| match abc {
+            ABC::A => unreachable!(),
+            ABC::B => BC::B,
+            ABC::C => BC::C,
+        });
+        assert!(wider.try_send(ABC::B));
+        assert!(wider.try_send(ABC::C));
     }
 
     #[test]
@@ -176,7 +154,11 @@ mod actorref_mapping_tests {
     fn test_actorref_widen_panic() {
         let m_channel = mpsc::channel::<BC>(10);
         let actor_ref = ActorRef { m_sender: m_channel.0 };
-        let mut wider = actor_ref.widen::<ABC>();
-        wider.try_send(ABC::A).unwrap();
+        let mut wider = actor_ref.widen::<ABC, _>(|abc| match abc {
+            ABC::A => panic!(),
+            ABC::B => BC::B,
+            ABC::C => BC::C,
+        });
+        wider.try_send(ABC::A);
     }
 }
