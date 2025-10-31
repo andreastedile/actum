@@ -14,6 +14,18 @@ impl ChildrenTracker {
         Self::default()
     }
 
+    pub fn has_children(&self) -> bool {
+        self.children_count() > 0
+    }
+
+    pub fn children_count(&self) -> usize {
+        if let Some(counter) = &self.inner {
+            counter.children_count.load(Ordering::Relaxed)
+        } else {
+            0
+        }
+    }
+
     pub fn make_child(&mut self) -> WakeParentOnDrop {
         if let Some(state) = self.inner.as_mut() {
             state.children_count.fetch_add(1, Ordering::Relaxed);
