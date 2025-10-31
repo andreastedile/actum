@@ -46,11 +46,9 @@ where
                 fut.await
             }
         };
-
-        if let Some(mut tracker) = cell.tracker.take() {
-            tracing::trace!("joining children");
-            tracker.join_all().await;
-        }
+        
+        tracing::trace!("joining children");
+        cell.tracker.join_all().await;
 
         let returned_effect_from_actor_to_testkit = ReturnedEffectFromActorToTestkit { ret };
         self.dependency

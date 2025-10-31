@@ -10,6 +10,10 @@ pub(crate) struct ChildrenTracker {
 }
 
 impl ChildrenTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn make_child(&mut self) -> WakeParentOnDrop {
         if let Some(state) = self.inner.as_mut() {
             state.children_count.fetch_add(1, Ordering::Relaxed);

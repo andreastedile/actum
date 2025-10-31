@@ -96,15 +96,13 @@ impl CreateChild for ActorCell<ActorCellTestkitExtension> {
             returned_effect_from_testkit_to_actor_channel.0,
         );
 
-        let tracker = self.tracker.get_or_insert_default();
-
         let mut task = ActorTask::new(
             ActorInner::Unboxed(f),
             cell,
             receiver,
             actor_ref.clone(),
             extension,
-            Some(tracker.make_child()),
+            Some(self.tracker.make_child()),
         );
 
         let create_child_effect_from_actor_to_testkit = UntypedCreateChildEffectFromActorToTestkit {

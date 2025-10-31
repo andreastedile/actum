@@ -34,7 +34,7 @@ impl CreateChild for ActorCell<()> {
 
         let cell = Self::new(());
 
-        let tracker = self.tracker.get_or_insert_default().make_child();
+        let tracker = self.tracker.make_child();
 
         let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), (), Some(tracker));
 
