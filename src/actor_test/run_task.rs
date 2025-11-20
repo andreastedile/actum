@@ -3,6 +3,7 @@ use crate::actor_test::effect::returned_effect::{ReturnedEffectFromActorToTestki
 use crate::actor_test::receive_message::MessageReceiver;
 use crate::core::children_tracker::WakeParentOnDrop;
 use crate::prelude::{ActorRef, RunTask};
+use either::Either;
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
 use std::any::Any;
@@ -10,7 +11,7 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
 pub struct ActorTask<M, F, Fut, Ret> {
-    f: F,
+    f: Either<F, BoxTestActor<M, Ret>>,
     ret: PhantomData<Ret>,
     fut: PhantomData<Fut>,
     receiver: MessageReceiver<M>,
@@ -24,7 +25,7 @@ pub struct ActorTask<M, F, Fut, Ret> {
 
 impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
     pub(crate) const fn new(
-        f: F,
+        f: Either<F, BoxTestActor<M, Ret>>,
         cell: ActorCell,
         receiver: MessageReceiver<M>,
         actor_ref: ActorRef<M>,
@@ -46,7 +47,7 @@ impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
     }
 }
 
-impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret>
+impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -56,13 +57,11 @@ where
     async fn run_task(self) -> Ret {
         let f = self.f;
         let (mut cell, ret) = match f {
-            ActorInner::Unboxed(f) => {
-                //
+            Either::Left(f) => {
                 let fut = f(self.cell, self.receiver, self.actor_ref);
                 fut.await
             }
-            ActorInner::Boxed(f) => {
-                //
+            Either::Right(f) => {
                 let fut = f(self.cell, self.receiver, self.actor_ref);
                 fut.await
             }
@@ -113,9 +112,4 @@ impl UntypedBoxTestActor {
     pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> BoxTestActor<M, Ret> {
         self.0.downcast::<BoxTestActor<M, Ret>>().unwrap()
     }
-}
-
-pub enum ActorInner<F, M, Ret> {
-    Unboxed(F),
-    Boxed(BoxTestActor<M, Ret>),
 }

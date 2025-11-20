@@ -4,9 +4,10 @@ use crate::actor_test::effect::create_child_effect::{
 use crate::actor_test::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::actor_test::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
 use crate::actor_test::receive_message::MessageReceiver;
-use crate::actor_test::run_task::{ActorInner, ActorTask};
+use crate::actor_test::run_task::ActorTask;
 use crate::core::children_tracker::ChildrenTracker;
 use crate::prelude::{ActorRef, CreateActorResult, CreateChild, Testkit};
+use either::Either;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 
@@ -36,7 +37,7 @@ impl CreateChild for ActorCell {
         M: Send + 'static;
 
     type RunTaskT<M, F, Fut, Ret>
-        = ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret>
+        = ActorTask<M, F, Fut, Ret>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -94,10 +95,10 @@ impl CreateChild for ActorCell {
             .await
             .expect("could not receive the effect back from the testkit");
 
-        let inner = if let Some(inner) = create_child_effect_from_testkit_to_actor.injected {
-            ActorInner::Boxed(inner.downcast_unwrap::<M, Ret>())
+        let inner = if let Some(injected) = create_child_effect_from_testkit_to_actor.injected {
+            Either::Right(injected.downcast_unwrap::<M, Ret>())
         } else {
-            ActorInner::Unboxed(f)
+            Either::Left(f)
         };
 
         let task = ActorTask::new(

@@ -5,8 +5,9 @@ use crate::actor_test::effect::create_child_effect::{
 use crate::actor_test::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
 use crate::actor_test::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
 use crate::actor_test::receive_message::MessageReceiver;
-use crate::actor_test::run_task::{ActorInner, ActorTask};
+use crate::actor_test::run_task::ActorTask;
 use crate::prelude::{ActorRef, Testkit};
+use either::Either;
 use futures::channel::{mpsc, oneshot};
 
 /// Instantiates the actor tree hierarchy with instrumentation for testing the behavior of the actors in the tree hierarchy.
@@ -20,9 +21,7 @@ use futures::channel::{mpsc, oneshot};
 /// # Examples
 ///
 /// See the documentation of [Testkit] and its methods.
-pub fn actum_with_testkit<M, F, Fut, Ret>(
-    f: F,
-) -> ActumWithTestkit<M, ActorTask<M, ActorInner<F, M, Ret>, Fut, Ret>, Ret>
+pub fn actum_with_testkit<M, F, Fut, Ret>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret>, Ret>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -60,7 +59,7 @@ where
     );
 
     let task = ActorTask::new(
-        ActorInner::Unboxed(f),
+        Either::Left(f),
         cell,
         receiver,
         actor_ref.clone(),
