@@ -1,10 +1,20 @@
-use crate::core::message_receiver::MessageReceiver;
 use crate::prelude::{ReceiveMessage, Recv};
 use futures::StreamExt;
+use futures::channel::mpsc;
 use std::future::poll_fn;
 use std::task::Poll;
 
-impl<M> ReceiveMessage<M> for MessageReceiver<M, ()>
+pub struct MessageReceiver<M> {
+    m_receiver: mpsc::Receiver<M>,
+}
+
+impl<M> MessageReceiver<M> {
+    pub fn new(m_receiver: mpsc::Receiver<M>) -> Self {
+        Self { m_receiver }
+    }
+}
+
+impl<M> ReceiveMessage<M> for MessageReceiver<M>
 where
     M: Send + 'static,
 {

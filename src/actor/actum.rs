@@ -1,8 +1,8 @@
-use crate::core::actor_cell::ActorCell;
+use crate::actor::create_child::ActorCell;
+use crate::actor::receive_message::MessageReceiver;
+use crate::actor::run_task::ActorTask;
 use crate::core::actor_ref::ActorRef;
-use crate::core::actor_task::ActorTask;
 use crate::core::actor_to_spawn::CreateActorResult;
-use crate::core::message_receiver::MessageReceiver;
 use futures::channel::mpsc;
 
 /// Instantiates the actor tree hierarchy.
@@ -70,20 +70,20 @@ use futures::channel::mpsc;
 ///     println!("sum = {}", sum);
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> CreateActorResult<M, ActorTask<M, F, Fut, Ret, (), (), ()>>
+pub fn actum<M, F, Fut, Ret>(f: F) -> CreateActorResult<M, ActorTask<M, F, Fut, Ret>>
 where
     M: Send + 'static,
-    F: FnOnce(ActorCell<()>, MessageReceiver<M, ()>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell<()>, Ret)> + Send + 'static,
+    F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
+    Fut: Future<Output = (ActorCell, Ret)> + Send + 'static,
     Ret: Send + 'static,
 {
     let m_channel = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::new(m_channel.0);
-    let receiver = MessageReceiver::new(m_channel.1, ());
+    let receiver = MessageReceiver::new(m_channel.1);
 
-    let cell = ActorCell::new(());
+    let cell = ActorCell::new();
 
-    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), (), None);
+    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
     CreateActorResult::new(task, actor_ref)
 }

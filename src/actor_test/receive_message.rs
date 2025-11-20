@@ -1,23 +1,25 @@
 use crate::actor_test::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
-use crate::core::message_receiver::MessageReceiver;
 use crate::prelude::{ReceiveMessage, Recv};
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use std::future::poll_fn;
 use std::task::{Poll, ready};
 
-pub struct MessageReceiverTestkitExtension<M> {
+pub struct MessageReceiver<M> {
+    m_receiver: mpsc::Receiver<M>,
     recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
     recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
     state: RecvFutureStateMachine,
 }
 
-impl<M> MessageReceiverTestkitExtension<M> {
+impl<M> MessageReceiver<M> {
     pub(crate) const fn new(
+        m_receiver: mpsc::Receiver<M>,
         recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
         recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
     ) -> Self {
         Self {
+            m_receiver,
             recv_effect_from_actor_to_testkit_sender,
             recv_effect_from_testkit_to_actor_receiver,
             state: RecvFutureStateMachine::S0,
@@ -110,20 +112,20 @@ enum RecvFutureStateMachine {
     S2,
 }
 
-impl<M> ReceiveMessage<M> for MessageReceiver<M, MessageReceiverTestkitExtension<M>>
+impl<M> ReceiveMessage<M> for MessageReceiver<M>
 where
     M: Send + 'static,
 {
     fn recv(&mut self) -> impl Future<Output = Recv<M>> + '_ {
-        if self.dependency.state == RecvFutureStateMachine::S1 {
+        if self.state == RecvFutureStateMachine::S1 {
             // If the state is S1, it means that the previous future was dropped while it was waiting for the effect to
             // come back from the testkit.
-            self.dependency.state = RecvFutureStateMachine::S2;
+            self.state = RecvFutureStateMachine::S2;
         }
 
         poll_fn(|cx| {
             loop {
-                match self.dependency.state {
+                match self.state {
                     RecvFutureStateMachine::S0 => {
                         let m = ready!(self.m_receiver.next().poll_unpin(cx));
                         let recv = if let Some(m) = m {
@@ -134,51 +136,43 @@ where
 
                         let recv_effect_from_actor_to_testkit = RecvEffectFromActorToTestkit { recv };
 
-                        self.dependency
-                            .recv_effect_from_actor_to_testkit_sender
+                        self.recv_effect_from_actor_to_testkit_sender
                             .try_send(recv_effect_from_actor_to_testkit)
                             .expect("could not send the effect to the testkit");
 
-                        self.dependency.state = RecvFutureStateMachine::S1;
+                        self.state = RecvFutureStateMachine::S1;
                     }
                     RecvFutureStateMachine::S1 => {
-                        let recv_effect_from_testkit_to_actor = match self
-                            .dependency
-                            .recv_effect_from_testkit_to_actor_receiver
-                            .poll_next_unpin(cx)
-                        {
-                            Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
-                            Poll::Ready(Some(inner)) => inner,
-                            Poll::Pending => return Poll::Pending,
-                        };
+                        let recv_effect_from_testkit_to_actor =
+                            match self.recv_effect_from_testkit_to_actor_receiver.poll_next_unpin(cx) {
+                                Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
+                                Poll::Ready(Some(inner)) => inner,
+                                Poll::Pending => return Poll::Pending,
+                            };
 
-                        self.dependency.state = RecvFutureStateMachine::S0;
+                        self.state = RecvFutureStateMachine::S0;
 
                         if !recv_effect_from_testkit_to_actor.discarded {
                             return Poll::Ready(recv_effect_from_testkit_to_actor.recv);
                         } // else: poll the channels in the next iteration
                     }
                     RecvFutureStateMachine::S2 => {
-                        let recv_effect_from_testkit_to_actor = match self
-                            .dependency
-                            .recv_effect_from_testkit_to_actor_receiver
-                            .poll_next_unpin(cx)
-                        {
-                            Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
-                            Poll::Ready(Some(inner)) => inner,
-                            Poll::Pending => return Poll::Pending,
-                        };
+                        let recv_effect_from_testkit_to_actor =
+                            match self.recv_effect_from_testkit_to_actor_receiver.poll_next_unpin(cx) {
+                                Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
+                                Poll::Ready(Some(inner)) => inner,
+                                Poll::Pending => return Poll::Pending,
+                            };
 
                         let recv_effect_from_actor_to_testkit = RecvEffectFromActorToTestkit {
                             recv: recv_effect_from_testkit_to_actor.recv,
                         };
 
-                        self.dependency
-                            .recv_effect_from_actor_to_testkit_sender
+                        self.recv_effect_from_actor_to_testkit_sender
                             .try_send(recv_effect_from_actor_to_testkit)
                             .expect("could not send the effect to the testkit");
 
-                        self.dependency.state = RecvFutureStateMachine::S1;
+                        self.state = RecvFutureStateMachine::S1;
                     }
                 }
             }
