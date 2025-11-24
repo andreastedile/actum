@@ -143,15 +143,21 @@ mod remoting_tests {
     #[tokio::test]
     async fn test_it() {
         let sock = UdpSocket::bind("0.0.0.0:8080").await.unwrap();
+
+        sock.connect("0.0.0.0:8080").await.unwrap();
+        sock.send(b"hello, world!").await.unwrap();
+        sock.send(b"what's up?").await.unwrap();
+        sock.send(b"stop").await.unwrap();
+        // alternatively:
+        // echo -n "hello, world!" >/dev/udp/0.0.0.0/8080
+        // echo -n "what's up?" >/dev/udp/0.0.0.0/8080
+        // echo -n "stop" >/dev/udp/0.0.0.0/8080
+
         let mut buf = [0; 1024];
         let my_receive_letter = async move || {
             let (len, ..) = sock.recv_from(&mut buf).await.unwrap();
             String::from_utf8_lossy(&buf[..len]).to_string()
         };
-
-        // echo -n "hello, world!" >/dev/udp/0.0.0.0/8080
-        // echo -n "what's up?" >/dev/udp/0.0.0.0/8080
-        // echo -n "stop" >/dev/udp/0.0.0.0/8080
 
         let CreateActorResult { task, .. } = actum::<(), _, _, ()>(|mut cell, receiver, me| async move {
             drop(receiver);
@@ -201,7 +207,7 @@ mod remoting_tests {
                     (cell, ())
                 })
                 .await;
-            let receptionist_handle = tokio::spawn(task.run_task());
+            let _receptionist_handle = tokio::spawn(task.run_task());
 
             // to prevent the remoting service actor from returning due to "no more senders",
             // we must keep a reference in scope up until the users of the service are done with it.
@@ -226,7 +232,18 @@ mod remoting_kv_tests {
 
     #[tokio::test]
     async fn test_it() {
-        let sock = UdpSocket::bind("0.0.0.0:8080").await.unwrap();
+        // Tests are run in parallel, and port 8080 is used by another test
+        let sock = UdpSocket::bind("0.0.0.0:8081").await.unwrap();
+
+        sock.connect("0.0.0.0:8081").await.unwrap();
+        sock.send(b"hello, world!").await.unwrap();
+        sock.send(b"what's up?").await.unwrap();
+        sock.send(b"stop").await.unwrap();
+        // alternatively:
+        // echo -n "hello, world!" >/dev/udp/0.0.0.0/8081
+        // echo -n "what's up?" >/dev/udp/0.0.0.0/8081
+        // echo -n "stop" >/dev/udp/0.0.0.0/8081
+
         let mut buf = [0; 1024];
         let my_receive_letter = async move || {
             let (len, ..) = sock.recv_from(&mut buf).await.unwrap();
@@ -235,10 +252,6 @@ mod remoting_kv_tests {
                 message: Either::Left(String::from_utf8_lossy(&buf[..len]).to_string()),
             }
         };
-
-        // echo -n "hello, world!" >/dev/udp/0.0.0.0/8080
-        // echo -n "what's up?" >/dev/udp/0.0.0.0/8080
-        // echo -n "stop" >/dev/udp/0.0.0.0/8080
 
         let CreateActorResult { task, .. } = actum::<(), _, _, ()>(|mut cell, receiver, me| async move {
             drop(receiver);
