@@ -1,6 +1,14 @@
 use futures::channel::mpsc;
 use std::fmt::{Debug, Formatter};
 
+/// Reference to an actor that can be used to send messages to it, enabling communication.
+///
+/// It is first obtained by creating an actor either at the top level of the actor tree hierarchy or as a child of an existing actor.
+/// In both cases, both the newly created actor and the caller that created the actor obtain a copy of the reference.
+///
+/// It can be cloned and shared between actors in messages.
+///
+/// **Reference count**: If all references to an actor are dropped (including the actor's own copy — that is, no more senders exist), any subsequent call by the actor to the [recv](crate::core::receive_message::ReceiveMessage::recv) method of its receiver will return the [NoMoreSenders](crate::core::receive_message::Recv::NoMoreSenders) variant.
 pub struct ActorRef<M> {
     m_sender: mpsc::Sender<M>,
 }
