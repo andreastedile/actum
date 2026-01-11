@@ -1,5 +1,5 @@
 use std::future::Future;
 
-pub trait RunTask<Ret>: Send + 'static {
-    fn run_task(self) -> impl Future<Output = Ret> + Send + 'static;
+pub trait RunTask<Output>: Send + 'static {
+    fn run_task(self) -> impl Future<Output = Output> + Send + 'static;
 }

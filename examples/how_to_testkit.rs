@@ -78,7 +78,7 @@ async fn test() {
 
     let _ = child_tk
         .expect_returned_effect(async |effect| {
-            assert_eq!(*effect.ret, 2);
+            assert_eq!(*effect.output, 2);
         })
         .await;
 

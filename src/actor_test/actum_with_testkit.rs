@@ -21,20 +21,20 @@ use futures::channel::{mpsc, oneshot};
 /// # Examples
 ///
 /// See the documentation of [Testkit] and its methods.
-pub fn actum_with_testkit<M, F, Fut, Ret>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Ret>, Ret>
+pub fn actum_with_testkit<M, F, Fut, Output>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Output>, Output>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell, Ret)> + Send + 'static,
-    Ret: Send + 'static,
+    Fut: Future<Output = (ActorCell, Output)> + Send + 'static,
+    Output: Send + 'static,
 {
     let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
     let recv_effect_from_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
     let create_child_effect_from_actor_to_testkit_channel =
         mpsc::channel::<UntypedCreateChildEffectFromActorToTestkit>(1);
     let create_child_effect_from_testkit_to_actor_channel = mpsc::channel::<CreateChildEffectFromTestkitToActor>(1);
-    let returned_effect_from_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
-    let returned_effect_from_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
+    let returned_effect_from_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Output>>();
+    let returned_effect_from_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Output>>();
 
     let m_channel = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::new(m_channel.0);
@@ -76,8 +76,8 @@ where
 }
 
 /// Returned by [actum_with_testkit].
-pub struct ActumWithTestkit<M, RT, Ret> {
+pub struct ActumWithTestkit<M, RT, Output> {
     pub task: RT,
     pub actor_ref: ActorRef<M>,
-    pub testkit: Testkit<M, Ret>,
+    pub testkit: Testkit<M, Output>,
 }

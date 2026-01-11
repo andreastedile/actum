@@ -9,13 +9,13 @@ use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
 #[derive(EnumAsInner)]
-pub enum Effect<'a, M, Ret> {
+pub enum Effect<'a, M, Output> {
     Recv(RecvEffect<'a, M>),
     CreateChild(UntypedCreateChildEffect<'a>),
-    Returned(ReturnedEffect<'a, Ret>),
+    Returned(ReturnedEffect<'a, Output>),
 }
 
-impl<'a, M, Ret> Debug for Effect<'a, M, Ret> {
+impl<'a, M, Output> Debug for Effect<'a, M, Output> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Recv(inner) => inner.fmt(f),
@@ -25,8 +25,8 @@ impl<'a, M, Ret> Debug for Effect<'a, M, Ret> {
     }
 }
 
-pub(crate) enum EffectImpl<M, Ret> {
+pub(crate) enum EffectImpl<M, Output> {
     Recv(RecvEffectImpl<M>),
     CreateChild(UntypedCreateChildEffectImpl),
-    Returned(ReturnedEffectImpl<Ret>),
+    Returned(ReturnedEffectImpl<Output>),
 }

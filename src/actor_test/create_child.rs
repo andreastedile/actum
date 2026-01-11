@@ -36,28 +36,30 @@ impl CreateChild for ActorCell {
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Ret>
-        = ActorTask<M, F, Fut, Ret>
+    type RunTaskT<M, F, Fut, Output>
+        = ActorTask<M, F, Fut, Output>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static;
 
-    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Ret>>
+    async fn create_child<M, F, Fut, Output>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static,
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static,
     {
         let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
         let recv_effect_from_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
         let create_child_effect_from_actor_to_testkit_channel =
             mpsc::channel::<UntypedCreateChildEffectFromActorToTestkit>(1);
         let create_child_effect_from_testkit_to_actor_channel = mpsc::channel::<CreateChildEffectFromTestkitToActor>(1);
-        let returned_effect_from_actor_to_testkit_channel = oneshot::channel::<ReturnedEffectFromActorToTestkit<Ret>>();
-        let returned_effect_from_testkit_to_actor_channel = oneshot::channel::<ReturnedEffectFromTestkitToActor<Ret>>();
+        let returned_effect_from_actor_to_testkit_channel =
+            oneshot::channel::<ReturnedEffectFromActorToTestkit<Output>>();
+        let returned_effect_from_testkit_to_actor_channel =
+            oneshot::channel::<ReturnedEffectFromTestkitToActor<Output>>();
 
         let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);
@@ -96,7 +98,7 @@ impl CreateChild for ActorCell {
             .expect("could not receive the effect back from the testkit");
 
         let inner = if let Some(injected) = create_child_effect_from_testkit_to_actor.injected {
-            Either::Right(injected.downcast_unwrap::<M, Ret>())
+            Either::Right(injected.downcast_unwrap::<M, Output>())
         } else {
             Either::Left(f)
         };

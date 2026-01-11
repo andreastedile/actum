@@ -32,8 +32,8 @@ impl<'a> Debug for UntypedCreateChildEffect<'a> {
 }
 
 impl<'a> UntypedCreateChildEffect<'a> {
-    pub fn downcast<M: 'static, Ret: 'static>(mut self) -> Result<CreateChildEffect<'a, M, Ret>, Self> {
-        match self.untyped_testkit.downcast::<M, Ret>() {
+    pub fn downcast<M: 'static, Output: 'static>(mut self) -> Result<CreateChildEffect<'a, M, Output>, Self> {
+        match self.untyped_testkit.downcast::<M, Output>() {
             Ok(testkit) => Ok(CreateChildEffect {
                 testkit,
                 injected: &mut *self.injected,
@@ -45,20 +45,20 @@ impl<'a> UntypedCreateChildEffect<'a> {
         }
     }
 
-    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> CreateChildEffect<'a, M, Ret> {
+    pub fn downcast_unwrap<M: 'static, Output: 'static>(self) -> CreateChildEffect<'a, M, Output> {
         CreateChildEffect {
-            testkit: self.untyped_testkit.downcast::<M, Ret>().unwrap(),
+            testkit: self.untyped_testkit.downcast::<M, Output>().unwrap(),
             injected: &mut *self.injected,
         }
     }
 }
 
-pub struct CreateChildEffect<'a, M, Ret> {
-    pub testkit: Testkit<M, Ret>,
+pub struct CreateChildEffect<'a, M, Output> {
+    pub testkit: Testkit<M, Output>,
     pub(crate) injected: &'a mut Option<UntypedBoxTestActor>,
 }
 
-impl<'a, M, Ret> Debug for CreateChildEffect<'a, M, Ret> {
+impl<'a, M, Output> Debug for CreateChildEffect<'a, M, Output> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CreateChildEffect")
             .field("testkit", &self.testkit)
@@ -66,11 +66,11 @@ impl<'a, M, Ret> Debug for CreateChildEffect<'a, M, Ret> {
     }
 }
 
-impl<'a, M, Ret> CreateChildEffect<'a, M, Ret> {
-    pub fn inject_actor(self, actor: BoxTestActor<M, Ret>) -> Testkit<M, Ret>
+impl<'a, M, Output> CreateChildEffect<'a, M, Output> {
+    pub fn inject_actor(self, actor: BoxTestActor<M, Output>) -> Testkit<M, Output>
     where
         M: Send + 'static,
-        Ret: Send + 'static,
+        Output: Send + 'static,
     {
         *self.injected = Some(actor.into());
         self.testkit

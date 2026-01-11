@@ -70,12 +70,12 @@ use futures::channel::mpsc;
 ///     println!("sum = {}", sum);
 /// }
 /// ```
-pub fn actum<M, F, Fut, Ret>(f: F) -> CreateActorResult<M, ActorTask<M, F, Fut, Ret>>
+pub fn actum<M, F, Fut, Output>(f: F) -> CreateActorResult<M, ActorTask<M, F, Fut, Output>>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell, Ret)> + Send + 'static,
-    Ret: Send + 'static,
+    Fut: Future<Output = (ActorCell, Output)> + Send + 'static,
+    Output: Send + 'static,
 {
     let m_channel = mpsc::channel::<M>(100);
     let actor_ref = ActorRef::new(m_channel.0);

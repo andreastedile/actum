@@ -4,9 +4,9 @@ use crate::core::children_tracker::WakeParentOnDrop;
 use crate::prelude::{ActorRef, RunTask};
 use std::marker::PhantomData;
 
-pub struct ActorTask<M, F, Fut, Ret> {
+pub struct ActorTask<M, F, Fut, Output> {
     f: F,
-    ret: PhantomData<Ret>,
+    output: PhantomData<Output>,
     fut: PhantomData<Fut>,
     receiver: MessageReceiver<M>,
     cell: ActorCell,
@@ -15,7 +15,7 @@ pub struct ActorTask<M, F, Fut, Ret> {
     _waker: Option<WakeParentOnDrop>,
 }
 
-impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
+impl<M, F, Fut, Output> ActorTask<M, F, Fut, Output> {
     pub(crate) const fn new(
         f: F,
         cell: ActorCell,
@@ -25,7 +25,7 @@ impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
     ) -> Self {
         Self {
             f,
-            ret: PhantomData,
+            output: PhantomData,
             fut: PhantomData,
             receiver,
             cell,
@@ -35,23 +35,23 @@ impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
     }
 }
 
-impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret>
+impl<M, F, Fut, Output> RunTask<Output> for ActorTask<M, F, Fut, Output>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell, Ret)> + Send + 'static,
-    Ret: Send + 'static,
+    Fut: Future<Output = (ActorCell, Output)> + Send + 'static,
+    Output: Send + 'static,
 {
-    async fn run_task(self) -> Ret {
+    async fn run_task(self) -> Output {
         let f = self.f;
         let fut = f(self.cell, self.receiver, self.actor_ref);
-        let (mut cell, ret) = fut.await;
+        let (mut cell, output) = fut.await;
 
         if cell.tracker.has_children() {
             tracing::trace!("joining children");
             cell.tracker.join_all().await;
         }
 
-        ret
+        output
     }
 }

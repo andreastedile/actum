@@ -16,12 +16,12 @@ use std::fmt::{Debug, Formatter};
 use std::future::poll_fn;
 use std::task::Poll;
 
-pub struct Testkit<M, Ret> {
+pub struct Testkit<M, Output> {
     /// Becomes None once [ReturnedEffect] has been received.
-    state: Option<TestkitState<M, Ret>>,
+    state: Option<TestkitState<M, Output>>,
 }
 
-impl<M, Ret> Debug for Testkit<M, Ret> {
+impl<M, Output> Debug for Testkit<M, Output> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Testkit")
             .field("returned", &self.state.is_none())
@@ -29,24 +29,24 @@ impl<M, Ret> Debug for Testkit<M, Ret> {
     }
 }
 
-struct TestkitState<M, Ret> {
+struct TestkitState<M, Output> {
     recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
     recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
     create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
     create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
-    returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
+    returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Output>>,
     /// Wrapped in Option so that it can be taken.
-    returned_effect_from_testkit_to_actor_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>>,
+    returned_effect_from_testkit_to_actor_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Output>>>,
 }
 
-impl<M, Ret> Testkit<M, Ret> {
+impl<M, Output> Testkit<M, Output> {
     pub(crate) const fn new(
         recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
         recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
         create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
         create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
-        returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Ret>>,
-        returned_effect_from_testkit_to_actor_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Ret>>,
+        returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Output>>,
+        returned_effect_from_testkit_to_actor_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Output>>,
     ) -> Self {
         Self {
             state: Some(TestkitState {
@@ -67,10 +67,10 @@ impl<M, Ret> Testkit<M, Ret> {
     /// # Panics
     /// If the testkit has already received the [ReturnedEffect].
     #[must_use]
-    pub async fn test_next_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(Effect<'a, M, Ret>) -> T) -> T
+    pub async fn test_next_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(Effect<'a, M, Output>) -> T) -> T
     where
         M: Send + 'static,
-        Ret: Send + 'static,
+        Output: Send + 'static,
     {
         let state = self.state.as_mut().unwrap();
 
@@ -102,7 +102,7 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!("ActorTask did not send ReturnedEffect"),
                 Poll::Ready(Ok(effect)) => {
-                    return Poll::Ready(EffectImpl::Returned(ReturnedEffectImpl { ret: effect.ret }));
+                    return Poll::Ready(EffectImpl::Returned(ReturnedEffectImpl { output: effect.output }));
                 }
                 Poll::Pending => {}
             }
@@ -119,7 +119,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 untyped_testkit: effect.untyped_testkit.take().unwrap(),
                 injected: &mut effect.injected,
             }),
-            EffectImpl::Returned(effect) => Effect::Returned(ReturnedEffect { ret: &effect.ret }),
+            EffectImpl::Returned(effect) => Effect::Returned(ReturnedEffect { output: &effect.output }),
         };
 
         let t = handler(effect).await;
@@ -157,7 +157,7 @@ impl<M, Ret> Testkit<M, Ret> {
                 }
             }
             EffectImpl::Returned(inner) => {
-                let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { ret: inner.ret };
+                let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { output: inner.output };
                 state
                     .returned_effect_from_testkit_to_actor_sender
                     .take()
@@ -224,7 +224,7 @@ impl<M, Ret> Testkit<M, Ret> {
     pub async fn expect_recv_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(RecvEffect<'a, M>) -> T) -> T
     where
         M: Send + 'static,
-        Ret: Send + 'static,
+        Output: Send + 'static,
     {
         let state = self.state.as_mut().unwrap();
 
@@ -336,7 +336,7 @@ impl<M, Ret> Testkit<M, Ret> {
     ) -> T
     where
         M: Send + 'static,
-        Ret: Send + 'static,
+        Output: Send + 'static,
     {
         let state = self.state.as_mut().unwrap();
 
@@ -417,7 +417,7 @@ impl<M, Ret> Testkit<M, Ret> {
     ///     let handle = tokio::spawn(task.run_task());
     ///
     ///     testkit.expect_returned_effect(async |effect| {
-    ///         assert_eq!(*effect.ret, "returned");
+    ///         assert_eq!(*effect.output, "returned");
     ///     }).await;
     ///
     ///     handle.await.unwrap();
@@ -426,11 +426,11 @@ impl<M, Ret> Testkit<M, Ret> {
     #[must_use]
     pub async fn expect_returned_effect<T>(
         &mut self,
-        handler: impl for<'a> AsyncFnOnce(ReturnedEffect<'a, Ret>) -> T,
+        handler: impl for<'a> AsyncFnOnce(ReturnedEffect<'a, Output>) -> T,
     ) -> T
     where
         M: Send + 'static,
-        Ret: Send + 'static,
+        Output: Send + 'static,
     {
         let state = self.state.as_mut().unwrap();
 
@@ -456,7 +456,7 @@ impl<M, Ret> Testkit<M, Ret> {
             match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!(),
                 Poll::Ready(Ok(effect)) => {
-                    return Poll::Ready(ReturnedEffectImpl { ret: effect.ret });
+                    return Poll::Ready(ReturnedEffectImpl { output: effect.output });
                 }
                 Poll::Pending => {}
             }
@@ -464,11 +464,15 @@ impl<M, Ret> Testkit<M, Ret> {
         })
         .await;
 
-        let effect = ReturnedEffect { ret: &effect_impl.ret };
+        let effect = ReturnedEffect {
+            output: &effect_impl.output,
+        };
 
         let t = handler(effect).await;
 
-        let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { ret: effect_impl.ret };
+        let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor {
+            output: effect_impl.output,
+        };
         state
             .returned_effect_from_testkit_to_actor_sender
             .take()
@@ -491,27 +495,27 @@ impl Debug for UntypedTestkit {
     }
 }
 
-impl<M, Ret> From<Testkit<M, Ret>> for UntypedTestkit
+impl<M, Output> From<Testkit<M, Output>> for UntypedTestkit
 where
     M: Send + 'static,
-    Ret: Send + 'static,
+    Output: Send + 'static,
 {
-    fn from(testkit: Testkit<M, Ret>) -> Self {
+    fn from(testkit: Testkit<M, Output>) -> Self {
         Self(Box::new(testkit))
     }
 }
 
 impl UntypedTestkit {
     /// Attempt to downcast to a concrete typed [Testkit].
-    pub fn downcast<M: 'static, Ret: 'static>(self) -> Result<Testkit<M, Ret>, Self> {
-        match self.0.downcast::<Testkit<M, Ret>>() {
+    pub fn downcast<M: 'static, Output: 'static>(self) -> Result<Testkit<M, Output>, Self> {
+        match self.0.downcast::<Testkit<M, Output>>() {
             Ok(testkit) => Ok(*testkit),
             Err(testkit) => Err(Self(testkit)),
         }
     }
 
-    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> Testkit<M, Ret> {
-        *self.0.downcast::<Testkit<M, Ret>>().unwrap()
+    pub fn downcast_unwrap<M: 'static, Output: 'static>(self) -> Testkit<M, Output> {
+        *self.0.downcast::<Testkit<M, Output>>().unwrap()
     }
 }
 
@@ -529,7 +533,7 @@ mod tests {
 
         let _ = testkit
             .expect_returned_effect(async |effect| {
-                assert_eq!(*effect.ret, 42);
+                assert_eq!(*effect.output, 42);
             })
             .await;
 

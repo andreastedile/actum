@@ -31,20 +31,20 @@ impl CreateChild for ActorCell {
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Ret>
-        = ActorTask<M, F, Fut, Ret>
+    type RunTaskT<M, F, Fut, Output>
+        = ActorTask<M, F, Fut, Output>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static;
 
-    async fn create_child<M, F, Fut, Ret>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Ret>>
+    async fn create_child<M, F, Fut, Output>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static,
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static,
     {
         let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);

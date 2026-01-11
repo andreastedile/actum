@@ -10,28 +10,28 @@ use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
-pub struct ActorTask<M, F, Fut, Ret> {
-    f: Either<F, BoxTestActor<M, Ret>>,
-    ret: PhantomData<Ret>,
+pub struct ActorTask<M, F, Fut, Output> {
+    f: Either<F, BoxTestActor<M, Output>>,
+    ret: PhantomData<Output>,
     fut: PhantomData<Fut>,
     receiver: MessageReceiver<M>,
     cell: ActorCell,
     actor_ref: ActorRef<M>,
     /// None if there is no parent (thus, the actor is the root of the tree).
     _waker: Option<WakeParentOnDrop>,
-    returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
-    returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
+    returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Output>>,
+    returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Output>>,
 }
 
-impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
+impl<M, F, Fut, Output> ActorTask<M, F, Fut, Output> {
     pub(crate) const fn new(
-        f: Either<F, BoxTestActor<M, Ret>>,
+        f: Either<F, BoxTestActor<M, Output>>,
         cell: ActorCell,
         receiver: MessageReceiver<M>,
         actor_ref: ActorRef<M>,
         waker: Option<WakeParentOnDrop>,
-        returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Ret>>,
-        returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Ret>>,
+        returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Output>>,
+        returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Output>>,
     ) -> Self {
         Self {
             f,
@@ -47,16 +47,16 @@ impl<M, F, Fut, Ret> ActorTask<M, F, Fut, Ret> {
     }
 }
 
-impl<M, F, Fut, Ret> RunTask<Ret> for ActorTask<M, F, Fut, Ret>
+impl<M, F, Fut, Output> RunTask<Output> for ActorTask<M, F, Fut, Output>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
-    Fut: Future<Output = (ActorCell, Ret)> + Send + 'static,
-    Ret: Send + 'static,
+    Fut: Future<Output = (ActorCell, Output)> + Send + 'static,
+    Output: Send + 'static,
 {
-    async fn run_task(self) -> Ret {
+    async fn run_task(self) -> Output {
         let f = self.f;
-        let (mut cell, ret) = match f {
+        let (mut cell, output) = match f {
             Either::Left(f) => {
                 let fut = f(self.cell, self.receiver, self.actor_ref);
                 fut.await
@@ -72,7 +72,7 @@ where
             cell.tracker.join_all().await;
         }
 
-        let returned_effect_from_actor_to_testkit = ReturnedEffectFromActorToTestkit { ret };
+        let returned_effect_from_actor_to_testkit = ReturnedEffectFromActorToTestkit { output };
         self.returned_effect_from_actor_to_testkit_sender
             .send(returned_effect_from_actor_to_testkit)
             .expect("could not send the effect to the testkit");
@@ -82,13 +82,13 @@ where
             .await
             .expect("could not receive effect back from the testkit");
 
-        returned_effect_from_testkit_to_actor.ret
+        returned_effect_from_testkit_to_actor.output
     }
 }
 
 #[rustfmt::skip]
-pub type BoxTestActor<M, Ret> =
-    Box<dyn FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> BoxFuture<'static, (ActorCell, Ret)> + Send + 'static>;
+pub type BoxTestActor<M, Output> =
+    Box<dyn FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> BoxFuture<'static, (ActorCell, Output)> + Send + 'static>;
 
 pub(crate) struct UntypedBoxTestActor(Box<dyn Any + Send>);
 
@@ -98,18 +98,18 @@ impl Debug for UntypedBoxTestActor {
     }
 }
 
-impl<M, Ret> From<BoxTestActor<M, Ret>> for UntypedBoxTestActor
+impl<M, Output> From<BoxTestActor<M, Output>> for UntypedBoxTestActor
 where
     M: 'static,
-    Ret: 'static,
+    Output: 'static,
 {
-    fn from(actor: BoxTestActor<M, Ret>) -> Self {
+    fn from(actor: BoxTestActor<M, Output>) -> Self {
         Self(Box::new(actor))
     }
 }
 
 impl UntypedBoxTestActor {
-    pub fn downcast_unwrap<M: 'static, Ret: 'static>(self) -> BoxTestActor<M, Ret> {
-        self.0.downcast::<BoxTestActor<M, Ret>>().unwrap()
+    pub fn downcast_unwrap<M: 'static, Output: 'static>(self) -> BoxTestActor<M, Output> {
+        self.0.downcast::<BoxTestActor<M, Output>>().unwrap()
     }
 }

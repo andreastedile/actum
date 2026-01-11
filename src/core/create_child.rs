@@ -9,12 +9,12 @@ pub trait CreateChild: Sized + Send + 'static {
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Ret>: RunTask<Ret>
+    type RunTaskT<M, F, Fut, Output>: RunTask<Output>
     where
         M: Send + 'static,
         F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static;
 
     /// Creates a child actor.
     /// The documentation of [actum](crate::actor::actum::actum) applies to this function as well.
@@ -88,13 +88,13 @@ pub trait CreateChild: Sized + Send + 'static {
     ///     task.run_task().await;
     /// }
     /// ```
-    fn create_child<M, F, Fut, Ret>(
+    fn create_child<M, F, Fut, Output>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = CreateActorResult<M, Self::RunTaskT<M, F, Fut, Ret>>> + Send + '_
+    ) -> impl Future<Output = CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>> + Send + '_
     where
         M: Send + 'static,
         F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,
-        Fut: Future<Output = (Self, Ret)> + Send + 'static,
-        Ret: Send + 'static;
+        Fut: Future<Output = (Self, Output)> + Send + 'static,
+        Output: Send + 'static;
 }
