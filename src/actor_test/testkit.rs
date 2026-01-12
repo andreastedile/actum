@@ -1,14 +1,12 @@
 use crate::actor_test::effect::create_child_effect::{
-    CreateChildEffectFromTestkitToActor, UntypedCreateChildEffect, UntypedCreateChildEffectFromActorToTestkit,
-    UntypedCreateChildEffectImpl,
+    CreateChildEffectToActor, UntypedCreateChildEffect, UntypedCreateChildEffectPrivate,
+    UntypedCreateChildEffectToTestkit,
 };
-use crate::actor_test::effect::recv_effect::{
-    RecvEffect, RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor, RecvEffectImpl,
-};
+use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectPrivate, RecvEffectToActor, RecvEffectToTestkit};
 use crate::actor_test::effect::returned_effect::{
-    ReturnedEffect, ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor, ReturnedEffectImpl,
+    ReturnedEffect, ReturnedEffectPrivate, ReturnedEffectToActor, ReturnedEffectToTestkit,
 };
-use crate::actor_test::effect::{Effect, EffectImpl};
+use crate::actor_test::effect::{Effect, EffectPrivate};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use std::any::Any;
@@ -30,32 +28,32 @@ impl<M, Output> Debug for Testkit<M, Output> {
 }
 
 struct TestkitState<M, Output> {
-    recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
-    recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-    create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
-    create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
-    returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Output>>,
+    recv_effect_to_testkit_receiver: mpsc::Receiver<RecvEffectToTestkit<M>>,
+    recv_effect_to_actor_sender: mpsc::Sender<RecvEffectToActor<M>>,
+    create_child_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectToTestkit>,
+    create_child_effect_to_actor_sender: mpsc::Sender<CreateChildEffectToActor>,
+    returned_effect_to_testkit_receiver: oneshot::Receiver<ReturnedEffectToTestkit<Output>>,
     /// Wrapped in Option so that it can be taken.
-    returned_effect_from_testkit_to_actor_sender: Option<oneshot::Sender<ReturnedEffectFromTestkitToActor<Output>>>,
+    returned_effect_to_actor_sender: Option<oneshot::Sender<ReturnedEffectToActor<Output>>>,
 }
 
 impl<M, Output> Testkit<M, Output> {
     pub(crate) const fn new(
-        recv_effect_from_actor_to_testkit_receiver: mpsc::Receiver<RecvEffectFromActorToTestkit<M>>,
-        recv_effect_from_testkit_to_actor_sender: mpsc::Sender<RecvEffectFromTestkitToActor<M>>,
-        create_child_effect_from_actor_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectFromActorToTestkit>,
-        create_child_effect_from_testkit_to_actor_sender: mpsc::Sender<CreateChildEffectFromTestkitToActor>,
-        returned_effect_from_actor_to_testkit_receiver: oneshot::Receiver<ReturnedEffectFromActorToTestkit<Output>>,
-        returned_effect_from_testkit_to_actor_sender: oneshot::Sender<ReturnedEffectFromTestkitToActor<Output>>,
+        recv_effect_to_testkit_receiver: mpsc::Receiver<RecvEffectToTestkit<M>>,
+        recv_effect_to_actor_sender: mpsc::Sender<RecvEffectToActor<M>>,
+        create_child_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectToTestkit>,
+        create_child_effect_to_actor_sender: mpsc::Sender<CreateChildEffectToActor>,
+        returned_effect_to_testkit_receiver: oneshot::Receiver<ReturnedEffectToTestkit<Output>>,
+        returned_effect_to_actor_sender: oneshot::Sender<ReturnedEffectToActor<Output>>,
     ) -> Self {
         Self {
             state: Some(TestkitState {
-                recv_effect_from_actor_to_testkit_receiver,
-                recv_effect_from_testkit_to_actor_sender,
-                create_child_effect_from_actor_to_testkit_receiver,
-                create_child_effect_from_testkit_to_actor_sender,
-                returned_effect_from_actor_to_testkit_receiver,
-                returned_effect_from_testkit_to_actor_sender: Some(returned_effect_from_testkit_to_actor_sender),
+                recv_effect_to_testkit_receiver,
+                recv_effect_to_actor_sender,
+                create_child_to_testkit_receiver,
+                create_child_effect_to_actor_sender,
+                returned_effect_to_testkit_receiver,
+                returned_effect_to_actor_sender: Some(returned_effect_to_actor_sender),
             }),
         }
     }
@@ -74,35 +72,31 @@ impl<M, Output> Testkit<M, Output> {
     {
         let state = self.state.as_mut().unwrap();
 
-        let mut effect_impl = poll_fn(|cx| {
-            match state.recv_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+        let mut effect_private = poll_fn(|cx| {
+            match state.recv_effect_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => { /* MessageReceiver has dropped */ }
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(EffectImpl::Recv(RecvEffectImpl {
+                    return Poll::Ready(EffectPrivate::Recv(RecvEffectPrivate {
                         recv: effect.recv,
                         discarded: false,
                     }));
                 }
                 Poll::Pending => {}
             };
-            match state
-                .create_child_effect_from_actor_to_testkit_receiver
-                .next()
-                .poll_unpin(cx)
-            {
+            match state.create_child_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => { /* ActorCell has dropped */ }
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(EffectImpl::CreateChild(UntypedCreateChildEffectImpl {
+                    return Poll::Ready(EffectPrivate::CreateChild(UntypedCreateChildEffectPrivate {
                         untyped_testkit: Some(effect.untyped_testkit),
                         injected: None,
                     }));
                 }
                 Poll::Pending => {}
             }
-            match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
+            match state.returned_effect_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!("ActorTask did not send ReturnedEffect"),
                 Poll::Ready(Ok(effect)) => {
-                    return Poll::Ready(EffectImpl::Returned(ReturnedEffectImpl { output: effect.output }));
+                    return Poll::Ready(EffectPrivate::Returned(ReturnedEffectPrivate { output: effect.output }));
                 }
                 Poll::Pending => {}
             }
@@ -110,29 +104,29 @@ impl<M, Output> Testkit<M, Output> {
         })
         .await;
 
-        let effect = match &mut effect_impl {
-            EffectImpl::Recv(effect) => Effect::Recv(RecvEffect {
+        let effect = match &mut effect_private {
+            EffectPrivate::Recv(effect) => Effect::Recv(RecvEffect {
                 recv: &effect.recv,
                 discarded: &mut effect.discarded,
             }),
-            EffectImpl::CreateChild(effect) => Effect::CreateChild(UntypedCreateChildEffect {
+            EffectPrivate::CreateChild(effect) => Effect::CreateChild(UntypedCreateChildEffect {
                 untyped_testkit: effect.untyped_testkit.take().unwrap(),
                 injected: &mut effect.injected,
             }),
-            EffectImpl::Returned(effect) => Effect::Returned(ReturnedEffect { output: &effect.output }),
+            EffectPrivate::Returned(effect) => Effect::Returned(ReturnedEffect { output: &effect.output }),
         };
 
         let t = handler(effect).await;
 
-        match effect_impl {
-            EffectImpl::Recv(inner) => {
-                let recv_effect_from_testkit_to_actor = RecvEffectFromTestkitToActor {
+        match effect_private {
+            EffectPrivate::Recv(inner) => {
+                let recv_effect_to_actor = RecvEffectToActor {
                     recv: inner.recv,
                     discarded: inner.discarded,
                 };
                 if state
-                    .recv_effect_from_testkit_to_actor_sender
-                    .try_send(recv_effect_from_testkit_to_actor)
+                    .recv_effect_to_actor_sender
+                    .try_send(recv_effect_to_actor)
                     .is_err()
                 {
                     // MessageReceiver has dropped.
@@ -141,13 +135,13 @@ impl<M, Output> Testkit<M, Output> {
                     // will lose the ability to receive new messages.
                 }
             }
-            EffectImpl::CreateChild(inner) => {
-                let create_child_effect_from_testkit_to_actor = CreateChildEffectFromTestkitToActor {
+            EffectPrivate::CreateChild(inner) => {
+                let create_child_effect_to_actor = CreateChildEffectToActor {
                     injected: inner.injected,
                 };
                 if state
-                    .create_child_effect_from_testkit_to_actor_sender
-                    .try_send(create_child_effect_from_testkit_to_actor)
+                    .create_child_effect_to_actor_sender
+                    .try_send(create_child_effect_to_actor)
                     .is_err()
                 {
                     // ActorCell has dropped.
@@ -156,13 +150,13 @@ impl<M, Output> Testkit<M, Output> {
                     // will lose the ability to create new child actors.
                 }
             }
-            EffectImpl::Returned(inner) => {
-                let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor { output: inner.output };
+            EffectPrivate::Returned(inner) => {
+                let returned_effect_to_actor = ReturnedEffectToActor { output: inner.output };
                 state
-                    .returned_effect_from_testkit_to_actor_sender
+                    .returned_effect_to_actor_sender
                     .take()
                     .unwrap()
-                    .send(returned_effect_from_testkit_to_actor)
+                    .send(returned_effect_to_actor)
                     .expect("could not send effect back to ActorTask");
 
                 self.state = None;
@@ -229,28 +223,24 @@ impl<M, Output> Testkit<M, Output> {
         let state = self.state.as_mut().unwrap();
 
         let mut effect_impl = poll_fn(|cx| {
-            match state.recv_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state.recv_effect_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(RecvEffectImpl {
+                    return Poll::Ready(RecvEffectPrivate {
                         recv: effect.recv,
                         discarded: false,
                     });
                 }
                 Poll::Pending => {}
             };
-            match state
-                .create_child_effect_from_actor_to_testkit_receiver
-                .next()
-                .poll_unpin(cx)
-            {
+            match state.create_child_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `RecvEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             }
-            match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
+            match state.returned_effect_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!(),
                 Poll::Ready(Ok(effect)) => {
                     panic!("Expected `RecvEffect`, received {:?}", effect);
@@ -268,13 +258,13 @@ impl<M, Output> Testkit<M, Output> {
 
         let t = handler(effect).await;
 
-        let recv_effect_from_testkit_to_actor = RecvEffectFromTestkitToActor {
+        let recv_effect_to_actor = RecvEffectToActor {
             recv: effect_impl.recv,
             discarded: effect_impl.discarded,
         };
         state
-            .recv_effect_from_testkit_to_actor_sender
-            .try_send(recv_effect_from_testkit_to_actor)
+            .recv_effect_to_actor_sender
+            .try_send(recv_effect_to_actor)
             .expect("could not send effect back to actor");
 
         t
@@ -341,28 +331,24 @@ impl<M, Output> Testkit<M, Output> {
         let state = self.state.as_mut().unwrap();
 
         let mut effect_impl = poll_fn(|cx| {
-            match state.recv_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+            match state.recv_effect_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `CreateChildEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             };
-            match state
-                .create_child_effect_from_actor_to_testkit_receiver
-                .next()
-                .poll_unpin(cx)
-            {
+            match state.create_child_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(UntypedCreateChildEffectImpl {
+                    return Poll::Ready(UntypedCreateChildEffectPrivate {
                         untyped_testkit: Some(effect.untyped_testkit),
                         injected: None,
                     });
                 }
                 Poll::Pending => {}
             }
-            match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
+            match state.returned_effect_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!(),
                 Poll::Ready(Ok(effect)) => {
                     panic!("Expected `CreateChildEffect`, received {:?}", effect);
@@ -380,12 +366,12 @@ impl<M, Output> Testkit<M, Output> {
 
         let t = handler(effect).await;
 
-        let create_child_effect_from_testkit_to_actor = CreateChildEffectFromTestkitToActor {
+        let create_child_effect_to_actor = CreateChildEffectToActor {
             injected: effect_impl.injected,
         };
         state
-            .create_child_effect_from_testkit_to_actor_sender
-            .try_send(create_child_effect_from_testkit_to_actor)
+            .create_child_effect_to_actor_sender
+            .try_send(create_child_effect_to_actor)
             .expect("could not send effect back to actor");
 
         t
@@ -434,29 +420,25 @@ impl<M, Output> Testkit<M, Output> {
     {
         let state = self.state.as_mut().unwrap();
 
-        let effect_impl = poll_fn(|cx| {
-            match state.recv_effect_from_actor_to_testkit_receiver.next().poll_unpin(cx) {
+        let effect_private = poll_fn(|cx| {
+            match state.recv_effect_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => { /* MessageReceiver has dropped */ }
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `ReturnedEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             };
-            match state
-                .create_child_effect_from_actor_to_testkit_receiver
-                .next()
-                .poll_unpin(cx)
-            {
+            match state.create_child_to_testkit_receiver.next().poll_unpin(cx) {
                 Poll::Ready(None) => panic!(),
                 Poll::Ready(Some(effect)) => {
                     panic!("Expected `ReturnedEffect`, received {:?}", effect);
                 }
                 Poll::Pending => {}
             }
-            match state.returned_effect_from_actor_to_testkit_receiver.poll_unpin(cx) {
+            match state.returned_effect_to_testkit_receiver.poll_unpin(cx) {
                 Poll::Ready(Err(oneshot::Canceled)) => panic!(),
                 Poll::Ready(Ok(effect)) => {
-                    return Poll::Ready(ReturnedEffectImpl { output: effect.output });
+                    return Poll::Ready(ReturnedEffectPrivate { output: effect.output });
                 }
                 Poll::Pending => {}
             }
@@ -465,19 +447,19 @@ impl<M, Output> Testkit<M, Output> {
         .await;
 
         let effect = ReturnedEffect {
-            output: &effect_impl.output,
+            output: &effect_private.output,
         };
 
         let t = handler(effect).await;
 
-        let returned_effect_from_testkit_to_actor = ReturnedEffectFromTestkitToActor {
-            output: effect_impl.output,
+        let returned_effect_to_actor = ReturnedEffectToActor {
+            output: effect_private.output,
         };
         state
-            .returned_effect_from_testkit_to_actor_sender
+            .returned_effect_to_actor_sender
             .take()
             .unwrap()
-            .send(returned_effect_from_testkit_to_actor)
+            .send(returned_effect_to_actor)
             .expect("could not send effect back to actor");
 
         self.state = None;

@@ -2,13 +2,13 @@ use crate::actor_test::run_task::{BoxTestActor, UntypedBoxTestActor};
 use crate::actor_test::testkit::{Testkit, UntypedTestkit};
 use std::fmt::{Debug, Formatter};
 
-pub(crate) struct UntypedCreateChildEffectImpl {
+pub(crate) struct UntypedCreateChildEffectPrivate {
     /// Wrapped in Option so that it can be taken.
     pub untyped_testkit: Option<UntypedTestkit>,
     pub injected: Option<UntypedBoxTestActor>,
 }
 
-impl Debug for UntypedCreateChildEffectImpl {
+impl Debug for UntypedCreateChildEffectPrivate {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CreateChildEffect")
             .field("untyped_testkit", &self.untyped_testkit)
@@ -77,11 +77,12 @@ impl<'a, M, Output> CreateChildEffect<'a, M, Output> {
     }
 }
 
-pub(crate) struct UntypedCreateChildEffectFromActorToTestkit {
+/// From the actor under test to the testkit.
+pub(crate) struct UntypedCreateChildEffectToTestkit {
     pub untyped_testkit: UntypedTestkit,
 }
 
-impl Debug for UntypedCreateChildEffectFromActorToTestkit {
+impl Debug for UntypedCreateChildEffectToTestkit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CreateChildEffect")
             .field("testkit", &self.untyped_testkit)
@@ -89,11 +90,12 @@ impl Debug for UntypedCreateChildEffectFromActorToTestkit {
     }
 }
 
-pub(crate) struct CreateChildEffectFromTestkitToActor {
+/// From the testkit to the actor under test.
+pub(crate) struct CreateChildEffectToActor {
     pub injected: Option<UntypedBoxTestActor>,
 }
 
-impl Debug for CreateChildEffectFromTestkitToActor {
+impl Debug for CreateChildEffectToActor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CreateChildEffect")
             .field("injected", &self.injected)

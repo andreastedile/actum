@@ -1,12 +1,12 @@
 use crate::core::receive_message::Recv;
 use std::fmt::{Debug, Formatter};
 
-pub(crate) struct RecvEffectImpl<M> {
+pub(crate) struct RecvEffectPrivate<M> {
     pub recv: Recv<M>,
     pub discarded: bool,
 }
 
-impl<M> Debug for RecvEffectImpl<M> {
+impl<M> Debug for RecvEffectPrivate<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecvEffect")
             .field("recv", &self.recv)
@@ -35,22 +35,24 @@ impl<'a, M> RecvEffect<'a, M> {
     }
 }
 
-pub(crate) struct RecvEffectFromActorToTestkit<M> {
+/// From the actor under test to the testkit.
+pub(crate) struct RecvEffectToTestkit<M> {
     pub recv: Recv<M>,
 }
 
-impl<M> Debug for RecvEffectFromActorToTestkit<M> {
+impl<M> Debug for RecvEffectToTestkit<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecvEffect").field("recv", &self.recv).finish()
     }
 }
 
-pub(crate) struct RecvEffectFromTestkitToActor<M> {
+/// From the testkit to the actor under test.
+pub(crate) struct RecvEffectToActor<M> {
     pub recv: Recv<M>,
     pub discarded: bool,
 }
 
-impl<M> Debug for RecvEffectFromTestkitToActor<M> {
+impl<M> Debug for RecvEffectToActor<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecvEffect")
             .field("recv", &self.recv)

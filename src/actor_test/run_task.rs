@@ -1,5 +1,5 @@
 use crate::actor_test::create_child::ActorCell;
-use crate::actor_test::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
+use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
 use crate::core::children_tracker::WakeParentOnDrop;
 use crate::prelude::{ActorRef, RunTask};
@@ -19,8 +19,8 @@ pub struct ActorTask<M, F, Fut, Output> {
     actor_ref: ActorRef<M>,
     /// None if there is no parent (thus, the actor is the root of the tree).
     _waker: Option<WakeParentOnDrop>,
-    returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Output>>,
-    returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Output>>,
+    returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
+    returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
 }
 
 impl<M, F, Fut, Output> ActorTask<M, F, Fut, Output> {
@@ -30,8 +30,8 @@ impl<M, F, Fut, Output> ActorTask<M, F, Fut, Output> {
         receiver: MessageReceiver<M>,
         actor_ref: ActorRef<M>,
         waker: Option<WakeParentOnDrop>,
-        returned_effect_from_actor_to_testkit_sender: oneshot::Sender<ReturnedEffectFromActorToTestkit<Output>>,
-        returned_effect_from_testkit_to_actor_receiver: oneshot::Receiver<ReturnedEffectFromTestkitToActor<Output>>,
+        returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
+        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
     ) -> Self {
         Self {
             f,
@@ -41,8 +41,8 @@ impl<M, F, Fut, Output> ActorTask<M, F, Fut, Output> {
             cell,
             actor_ref,
             _waker: waker,
-            returned_effect_from_actor_to_testkit_sender,
-            returned_effect_from_testkit_to_actor_receiver,
+            returned_effect_to_testkit_sender,
+            returned_effect_to_actor_receiver,
         }
     }
 }
@@ -72,17 +72,17 @@ where
             cell.tracker.join_all().await;
         }
 
-        let returned_effect_from_actor_to_testkit = ReturnedEffectFromActorToTestkit { output };
-        self.returned_effect_from_actor_to_testkit_sender
-            .send(returned_effect_from_actor_to_testkit)
+        let returned_effect_to_testkit = ReturnedEffectToTestkit { output };
+        self.returned_effect_to_testkit_sender
+            .send(returned_effect_to_testkit)
             .expect("could not send the effect to the testkit");
 
-        let returned_effect_from_testkit_to_actor = self
-            .returned_effect_from_testkit_to_actor_receiver
+        let returned_effect_to_actor = self
+            .returned_effect_to_actor_receiver
             .await
             .expect("could not receive effect back from the testkit");
 
-        returned_effect_from_testkit_to_actor.output
+        returned_effect_to_actor.output
     }
 }
 

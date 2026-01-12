@@ -2,9 +2,9 @@ pub mod create_child_effect;
 pub mod recv_effect;
 pub mod returned_effect;
 
-use crate::actor_test::effect::create_child_effect::{UntypedCreateChildEffect, UntypedCreateChildEffectImpl};
-use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectImpl};
-use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectImpl};
+use crate::actor_test::effect::create_child_effect::{UntypedCreateChildEffect, UntypedCreateChildEffectPrivate};
+use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectPrivate};
+use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectPrivate};
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
@@ -25,8 +25,8 @@ impl<'a, M, Output> Debug for Effect<'a, M, Output> {
     }
 }
 
-pub(crate) enum EffectImpl<M, Output> {
-    Recv(RecvEffectImpl<M>),
-    CreateChild(UntypedCreateChildEffectImpl),
-    Returned(ReturnedEffectImpl<Output>),
+pub(crate) enum EffectPrivate<M, Output> {
+    Recv(RecvEffectPrivate<M>),
+    CreateChild(UntypedCreateChildEffectPrivate),
+    Returned(ReturnedEffectPrivate<Output>),
 }

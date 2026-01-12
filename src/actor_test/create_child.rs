@@ -1,8 +1,6 @@
-use crate::actor_test::effect::create_child_effect::{
-    CreateChildEffectFromTestkitToActor, UntypedCreateChildEffectFromActorToTestkit,
-};
-use crate::actor_test::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
-use crate::actor_test::effect::returned_effect::{ReturnedEffectFromActorToTestkit, ReturnedEffectFromTestkitToActor};
+use crate::actor_test::effect::create_child_effect::{CreateChildEffectToActor, UntypedCreateChildEffectToTestkit};
+use crate::actor_test::effect::recv_effect::{RecvEffectToActor, RecvEffectToTestkit};
+use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
 use crate::actor_test::run_task::ActorTask;
 use crate::core::children_tracker::ChildrenTracker;
@@ -13,19 +11,19 @@ use futures::channel::{mpsc, oneshot};
 
 pub struct ActorCell {
     pub(crate) tracker: ChildrenTracker,
-    create_child_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedCreateChildEffectFromActorToTestkit>,
-    create_child_effect_from_testkit_to_actor_receiver: mpsc::Receiver<CreateChildEffectFromTestkitToActor>,
+    create_child_effect_sender: mpsc::Sender<UntypedCreateChildEffectToTestkit>,
+    create_child_effect_receiver: mpsc::Receiver<CreateChildEffectToActor>,
 }
 
 impl ActorCell {
     pub(crate) fn new(
-        create_child_effect_from_actor_to_testkit_sender: mpsc::Sender<UntypedCreateChildEffectFromActorToTestkit>,
-        create_child_effect_from_testkit_to_actor_receiver: mpsc::Receiver<CreateChildEffectFromTestkitToActor>,
+        create_child_effect_sender: mpsc::Sender<UntypedCreateChildEffectToTestkit>,
+        create_child_effect_receiver: mpsc::Receiver<CreateChildEffectToActor>,
     ) -> Self {
         Self {
             tracker: ChildrenTracker::new(),
-            create_child_effect_from_actor_to_testkit_sender,
-            create_child_effect_from_testkit_to_actor_receiver,
+            create_child_effect_sender,
+            create_child_effect_receiver,
         }
     }
 }
@@ -51,53 +49,50 @@ impl CreateChild for ActorCell {
         Fut: Future<Output = (Self, Output)> + Send + 'static,
         Output: Send + 'static,
     {
-        let recv_effect_from_actor_to_testkit_channel = mpsc::channel::<RecvEffectFromActorToTestkit<M>>(1);
-        let recv_effect_from_testkit_to_actor_channel = mpsc::channel::<RecvEffectFromTestkitToActor<M>>(1);
-        let create_child_effect_from_actor_to_testkit_channel =
-            mpsc::channel::<UntypedCreateChildEffectFromActorToTestkit>(1);
-        let create_child_effect_from_testkit_to_actor_channel = mpsc::channel::<CreateChildEffectFromTestkitToActor>(1);
-        let returned_effect_from_actor_to_testkit_channel =
-            oneshot::channel::<ReturnedEffectFromActorToTestkit<Output>>();
-        let returned_effect_from_testkit_to_actor_channel =
-            oneshot::channel::<ReturnedEffectFromTestkitToActor<Output>>();
+        let recv_effect_to_testkit_channel = mpsc::channel::<RecvEffectToTestkit<M>>(1);
+        let recv_effect_to_actor_channel = mpsc::channel::<RecvEffectToActor<M>>(1);
+        let create_child_effect_to_testkit_channel = mpsc::channel::<UntypedCreateChildEffectToTestkit>(1);
+        let create_child_effect_to_actor_channel = mpsc::channel::<CreateChildEffectToActor>(1);
+        let returned_effect_to_testkit_channel = oneshot::channel::<ReturnedEffectToTestkit<Output>>();
+        let returned_effect_to_actor_channel = oneshot::channel::<ReturnedEffectToActor<Output>>();
 
         let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);
         let receiver = MessageReceiver::new(
             m_channel.1,
-            recv_effect_from_actor_to_testkit_channel.0,
-            recv_effect_from_testkit_to_actor_channel.1,
+            recv_effect_to_testkit_channel.0,
+            recv_effect_to_actor_channel.1,
         );
 
         let cell = Self::new(
-            create_child_effect_from_actor_to_testkit_channel.0,
-            create_child_effect_from_testkit_to_actor_channel.1,
+            create_child_effect_to_testkit_channel.0,
+            create_child_effect_to_actor_channel.1,
         );
 
         let testkit = Testkit::new(
-            recv_effect_from_actor_to_testkit_channel.1,
-            recv_effect_from_testkit_to_actor_channel.0,
-            create_child_effect_from_actor_to_testkit_channel.1,
-            create_child_effect_from_testkit_to_actor_channel.0,
-            returned_effect_from_actor_to_testkit_channel.1,
-            returned_effect_from_testkit_to_actor_channel.0,
+            recv_effect_to_testkit_channel.1,
+            recv_effect_to_actor_channel.0,
+            create_child_effect_to_testkit_channel.1,
+            create_child_effect_to_actor_channel.0,
+            returned_effect_to_testkit_channel.1,
+            returned_effect_to_actor_channel.0,
         );
 
-        let create_child_effect_from_actor_to_testkit = UntypedCreateChildEffectFromActorToTestkit {
+        let create_child_to_testkit = UntypedCreateChildEffectToTestkit {
             untyped_testkit: testkit.into(),
         };
 
-        self.create_child_effect_from_actor_to_testkit_sender
-            .try_send(create_child_effect_from_actor_to_testkit)
+        self.create_child_effect_sender
+            .try_send(create_child_to_testkit)
             .expect("could not send the effect to the testkit");
 
-        let create_child_effect_from_testkit_to_actor = self
-            .create_child_effect_from_testkit_to_actor_receiver
+        let create_child_effect_to_actor = self
+            .create_child_effect_receiver
             .next()
             .await
             .expect("could not receive the effect back from the testkit");
 
-        let inner = if let Some(injected) = create_child_effect_from_testkit_to_actor.injected {
+        let inner = if let Some(injected) = create_child_effect_to_actor.injected {
             Either::Right(injected.downcast_unwrap::<M, Output>())
         } else {
             Either::Left(f)
@@ -109,8 +104,8 @@ impl CreateChild for ActorCell {
             receiver,
             actor_ref.clone(),
             Some(self.tracker.make_child()),
-            returned_effect_from_actor_to_testkit_channel.0,
-            returned_effect_from_testkit_to_actor_channel.1,
+            returned_effect_to_testkit_channel.0,
+            returned_effect_to_actor_channel.1,
         );
 
         CreateActorResult::new(task, actor_ref)

@@ -1,4 +1,4 @@
-use crate::actor_test::effect::recv_effect::{RecvEffectFromActorToTestkit, RecvEffectFromTestkitToActor};
+use crate::actor_test::effect::recv_effect::{RecvEffectToActor, RecvEffectToTestkit};
 use crate::prelude::{ReceiveMessage, Recv};
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
@@ -7,21 +7,21 @@ use std::task::{Poll, ready};
 
 pub struct MessageReceiver<M> {
     m_receiver: mpsc::Receiver<M>,
-    recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
-    recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
+    recv_effect_to_testkit_sender: mpsc::Sender<RecvEffectToTestkit<M>>,
+    recv_effect_to_actor_receiver: mpsc::Receiver<RecvEffectToActor<M>>,
     state: RecvFutureStateMachine,
 }
 
 impl<M> MessageReceiver<M> {
     pub(crate) const fn new(
         m_receiver: mpsc::Receiver<M>,
-        recv_effect_from_actor_to_testkit_sender: mpsc::Sender<RecvEffectFromActorToTestkit<M>>,
-        recv_effect_from_testkit_to_actor_receiver: mpsc::Receiver<RecvEffectFromTestkitToActor<M>>,
+        recv_effect_to_testkit_sender: mpsc::Sender<RecvEffectToTestkit<M>>,
+        recv_effect_to_actor_receiver: mpsc::Receiver<RecvEffectToActor<M>>,
     ) -> Self {
         Self {
             m_receiver,
-            recv_effect_from_actor_to_testkit_sender,
-            recv_effect_from_testkit_to_actor_receiver,
+            recv_effect_to_testkit_sender,
+            recv_effect_to_actor_receiver,
             state: RecvFutureStateMachine::S0,
         }
     }
@@ -134,42 +134,40 @@ where
                             Recv::NoMoreSenders
                         };
 
-                        let recv_effect_from_actor_to_testkit = RecvEffectFromActorToTestkit { recv };
+                        let recv_effect_to_testkit = RecvEffectToTestkit { recv };
 
-                        self.recv_effect_from_actor_to_testkit_sender
-                            .try_send(recv_effect_from_actor_to_testkit)
+                        self.recv_effect_to_testkit_sender
+                            .try_send(recv_effect_to_testkit)
                             .expect("could not send the effect to the testkit");
 
                         self.state = RecvFutureStateMachine::S1;
                     }
                     RecvFutureStateMachine::S1 => {
-                        let recv_effect_from_testkit_to_actor =
-                            match self.recv_effect_from_testkit_to_actor_receiver.poll_next_unpin(cx) {
-                                Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
-                                Poll::Ready(Some(inner)) => inner,
-                                Poll::Pending => return Poll::Pending,
-                            };
+                        let recv_effect_to_actor = match self.recv_effect_to_actor_receiver.poll_next_unpin(cx) {
+                            Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
+                            Poll::Ready(Some(inner)) => inner,
+                            Poll::Pending => return Poll::Pending,
+                        };
 
                         self.state = RecvFutureStateMachine::S0;
 
-                        if !recv_effect_from_testkit_to_actor.discarded {
-                            return Poll::Ready(recv_effect_from_testkit_to_actor.recv);
+                        if !recv_effect_to_actor.discarded {
+                            return Poll::Ready(recv_effect_to_actor.recv);
                         } // else: poll the channels in the next iteration
                     }
                     RecvFutureStateMachine::S2 => {
-                        let recv_effect_from_testkit_to_actor =
-                            match self.recv_effect_from_testkit_to_actor_receiver.poll_next_unpin(cx) {
-                                Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
-                                Poll::Ready(Some(inner)) => inner,
-                                Poll::Pending => return Poll::Pending,
-                            };
-
-                        let recv_effect_from_actor_to_testkit = RecvEffectFromActorToTestkit {
-                            recv: recv_effect_from_testkit_to_actor.recv,
+                        let recv_effect_to_actor = match self.recv_effect_to_actor_receiver.poll_next_unpin(cx) {
+                            Poll::Ready(None) => panic!("could not receive effect back from the testkit"),
+                            Poll::Ready(Some(inner)) => inner,
+                            Poll::Pending => return Poll::Pending,
                         };
 
-                        self.recv_effect_from_actor_to_testkit_sender
-                            .try_send(recv_effect_from_actor_to_testkit)
+                        let recv_effect_to_testkit = RecvEffectToTestkit {
+                            recv: recv_effect_to_actor.recv,
+                        };
+
+                        self.recv_effect_to_testkit_sender
+                            .try_send(recv_effect_to_testkit)
                             .expect("could not send the effect to the testkit");
 
                         self.state = RecvFutureStateMachine::S1;
