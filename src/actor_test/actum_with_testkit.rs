@@ -8,18 +8,7 @@ use crate::prelude::{ActorRef, Testkit};
 use either::Either;
 use futures::channel::{mpsc, oneshot};
 
-/// Instantiates the actor tree hierarchy with instrumentation for testing the behavior of the actors in the tree hierarchy.
-///
-/// The documentation of [actum](crate::actor::actum::actum) applies to this function as well, with the difference that the
-/// returned struct also contains the [Testkit] for testing the behavior of the root actor.
-///
-/// For any child actor created from within the root actor, you can obtain its corresponding testkit
-/// through the testkit of the root actor (see [expect_create_child_effect](Testkit::expect_create_child_effect)).
-///
-/// # Examples
-///
-/// See the documentation of [Testkit] and its methods.
-pub fn actum_with_testkit<M, F, Fut, Output>(f: F) -> ActumWithTestkit<M, ActorTask<M, F, Fut, Output>, Output>
+pub fn actum_with_testkit<M, F, Fut, Output>(f: F) -> ActumWithTestkit<M, ScopedActorTask<M, F, Fut, Output>, Output>
 where
     M: Send + 'static,
     F: FnOnce(ActorCell, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
