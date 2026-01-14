@@ -221,12 +221,8 @@ impl<M, Output> Testkit<M, Output> {
         Output: Send + 'static,
     {
         self.test_next_effect(async |effect| {
-            //
-            if let Effect::Recv(effect) = effect {
-                handler(effect).await
-            } else {
-                panic!("unexpected effect: {:?}", effect);
-            }
+            let variant = effect.into_recv().expect("unexpected effect");
+            handler(variant).await
         })
         .await
     }
@@ -290,12 +286,8 @@ impl<M, Output> Testkit<M, Output> {
         Output: Send + 'static,
     {
         self.test_next_effect(async |effect| {
-            //
-            if let Effect::CreateChild(effect) = effect {
-                handler(effect).await
-            } else {
-                panic!("unexpected effect: {:?}", effect);
-            }
+            let variant = effect.into_create_child().expect("unexpected effect");
+            handler(variant).await
         })
         .await
     }
@@ -343,12 +335,8 @@ impl<M, Output> Testkit<M, Output> {
     {
         let t = self
             .test_next_effect(async |effect| {
-                //
-                if let Effect::Returned(effect) = effect {
-                    handler(effect).await
-                } else {
-                    panic!("unexpected effect: {:?}", effect);
-                }
+                let variant = effect.into_returned().expect("unexpected effect");
+                handler(variant).await
             })
             .await;
         self.state = None;
