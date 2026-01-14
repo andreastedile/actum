@@ -17,7 +17,7 @@ where
 {
     let child = cell.create_child(child).await;
     let span = tracing::trace_span!("child");
-    tokio::spawn(child.task.run_task().instrument(span));
+    tokio::spawn(child.task.instrument(span));
 
     // we return immediately after having spawned the child actor_cell.
     // even though the child actor_cell is sleeping, it will not outlive us.
@@ -48,5 +48,5 @@ async fn main() {
 
     let parent = actum(parent);
     let span = tracing::trace_span!("parent");
-    parent.task.run_task().instrument(span).await;
+    parent.task.instrument(span).await;
 }

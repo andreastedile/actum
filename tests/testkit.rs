@@ -41,7 +41,7 @@ async fn test_slow_testkit() {
         (cell, ())
     });
 
-    let root_handle = tokio::spawn(task.run_task().instrument(info_span!("root")));
+    let root_handle = tokio::spawn(task.instrument(info_span!("root")));
 
     // Immediately send the NonClone.
     assert!(actor_ref.try_send(NonClone).is_ok());
@@ -89,7 +89,7 @@ async fn test_recv_effect_discard() {
         (cell, ())
     });
 
-    let root_handle = tokio::spawn(task.run_task().instrument(info_span!("root")));
+    let root_handle = tokio::spawn(task.instrument(info_span!("root")));
 
     // Send two messages and discard the first. Only the second can be received.
 

@@ -36,7 +36,7 @@ impl<M> MessageReceiver<M> {
 /// # Example
 ///
 /// ```rust
-/// use actum::prelude::{ActumWithTestkit, ReceiveMessage, RunTask, actum_with_testkit};
+/// use actum::prelude::{ActumWithTestkit, ReceiveMessage, actum_with_testkit};
 /// use std::time::Duration;
 ///
 /// #[tokio::main]
@@ -60,7 +60,7 @@ impl<M> MessageReceiver<M> {
 ///     actor_ref.try_send(1).unwrap();
 ///     actor_ref.try_send(2).unwrap();
 ///
-///     let root_handle = tokio::spawn(task.run_task());
+///     let root_handle = tokio::spawn(task);
 ///
 ///     let _ = testkit
 ///         .expect_recv_effect(async |_| {

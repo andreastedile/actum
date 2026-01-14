@@ -3,7 +3,7 @@ use crate::actor_test::effect::create_child_effect::{CreateChildEffectToActor, U
 use crate::actor_test::effect::recv_effect::{RecvEffectToActor, RecvEffectToTestkit};
 use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
-use crate::actor_test::run_task::ActorTask;
+use crate::actor_test::scoped::ScopedActorTask;
 use crate::prelude::{ActorRef, Testkit};
 use either::Either;
 use futures::channel::{mpsc, oneshot};
@@ -44,7 +44,7 @@ where
         returned_effect_to_actor_channel.0,
     );
 
-    let task = ActorTask::new(
+    let task = ScopedActorTask::new(
         Either::Left(f),
         cell,
         receiver,
@@ -62,8 +62,8 @@ where
 }
 
 /// Returned by [actum_with_testkit].
-pub struct ActumWithTestkit<M, RT, Output> {
-    pub task: RT,
+pub struct ActumWithTestkit<M, Scoped, Output> {
+    pub task: Scoped,
     pub actor_ref: ActorRef<M>,
     pub testkit: Testkit<M, Output>,
 }

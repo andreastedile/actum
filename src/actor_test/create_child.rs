@@ -2,7 +2,7 @@ use crate::actor_test::effect::create_child_effect::{CreateChildEffectToActor, U
 use crate::actor_test::effect::recv_effect::{RecvEffectToActor, RecvEffectToTestkit};
 use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
-use crate::actor_test::run_task::ActorTask;
+use crate::actor_test::scoped::ScopedActorTask;
 use crate::core::children_tracker::ChildrenTracker;
 use crate::prelude::{ActorRef, CreateActorResult, CreateChild, Testkit};
 use either::Either;
@@ -34,15 +34,18 @@ impl CreateChild for ActorCell {
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Output>
-        = ActorTask<M, F, Fut, Output>
+    type ScopedActorTaskT<M, F, Fut, Output>
+        = ScopedActorTask<M, F, Fut, Output>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Output)> + Send + 'static,
         Output: Send + 'static;
 
-    async fn create_child<M, F, Fut, Output>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>
+    async fn create_child<M, F, Fut, Output>(
+        &mut self,
+        f: F,
+    ) -> CreateActorResult<M, Self::ScopedActorTaskT<M, F, Fut, Output>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -92,14 +95,14 @@ impl CreateChild for ActorCell {
             .await
             .expect("could not receive the effect back from the testkit");
 
-        let inner = if let Some(injected) = create_child_effect_to_actor.injected {
+        let either = if let Some(injected) = create_child_effect_to_actor.injected {
             Either::Right(injected.downcast_unwrap::<M, Output>())
         } else {
             Either::Left(f)
         };
 
-        let task = ActorTask::new(
-            inner,
+        let task = ScopedActorTask::new(
+            either,
             cell,
             receiver,
             actor_ref.clone(),

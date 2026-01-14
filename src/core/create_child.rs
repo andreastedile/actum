@@ -1,97 +1,60 @@
 use crate::core::actor_ref::ActorRef;
-use crate::core::actor_task::RunTask;
 use crate::core::actor_to_spawn::CreateActorResult;
 use crate::core::receive_message::ReceiveMessage;
 use std::future::Future;
 
+/// Trait to create a child actor.
 pub trait CreateChild: Sized + Send + 'static {
     type ReceiveMessageT<M>: ReceiveMessage<M> + Send + 'static
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Output>: RunTask<Output>
+    /// An actor's scoped task is a future that:
+    /// 1. awaits the actor's future, obtaining its output;
+    /// 2. awaits the completion of the control tasks of its child actors (if any);
+    /// 3. returns the output of the actor's future.
+    ///
+    /// This ensures that actors in a tree hierarchy complete in a bottom-up order.
+    type ScopedActorTaskT<M, F, Fut, Output>: Future<Output = Output> + Send + 'static
     where
         M: Send + 'static,
         F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Output)> + Send + 'static,
         Output: Send + 'static;
 
-    /// Creates a child actor.
-    /// The documentation of [actum](crate::actor::actum::actum) applies to this function as well.
+    /// Creates a child actor of future `Fut` that can receive messages of type `M`.
     ///
-    /// From within the child actor, you can [create](CreateChild::create_child) new child actors of its own.
-    /// Therefore, this function effectively instantiates an actor tree hierarchy rooted in the child actor.
+    /// Returns a struct containing the [ActorRef] and the [scoped task](Self::ScopedActorTaskT) of the
+    /// newly created actor.
     ///
-    /// Like the actum function, it returns a struct containing the [ActorRef] of the root actor (generic over parameter `M`) and a special control structure.
-    /// The control structure has a method that returns a future which runs the child actor, joins the child actors of its own (if any), and resolves with the value returned by the child actor (generic over parameter `Ret`).
-    /// Once this future resolves, the entire actor tree hierarchy rooted in the child actor has returned.
+    /// # Running the actor
     ///
-    /// You can await the future to obtain the value returned by the child actor.
-    /// Otherwise, if your actor needs to do other work while the child actor is running, you can spawn the future in the background using your runtime of choice.
-    /// In the case of Tokio, this can be done with the [spawn](https://docs.rs/tokio/latest/tokio/task/fn.spawn.html) function:
-    /// you can await the [JoinHandle](https://docs.rs/tokio/latest/tokio/task/struct.JoinHandle.html) to obtain the value returned by the child actor.
-    /// If you do not do so and your actor returns, Actum will still join the child actor and the child actor of its own (if any).
-    /// Therefore, your actor will never be outlived by a child actor in any case.
+    /// This method does not run the actor.
+    /// To do so:
+    /// - await the scoped task directly, or
+    /// - spawn the scoped task into an async runtime of choice.
     ///
-    /// # Example
+    /// For this reason, you can send messages to the actor before running it.
     ///
-    /// ```rust
-    /// use actum::prelude::*;
+    /// # Hierarchy and lifetime
     ///
-    /// #[derive(Debug)]
-    /// pub struct Request {
-    ///     n: u32,
-    ///     reply_to: ActorRef<Response>,
-    /// }
+    /// From within the actor, you can create new child actors of its own.
     ///
-    /// #[derive(Debug)]
-    /// pub struct Response {
-    ///     n: u32,
-    /// }
+    /// The scoped task of a parent actor only resolves after the actor's future completes and all
+    /// scoped tasks of its descendant child actors, if any, have resolved as well.
+    /// Therefore, an actor's scoped task never outlives the one of its parent.
     ///
-    /// async fn root_actor<C, R>(mut cell: C, mut receiver: R, me: ActorRef<Response>) -> (C, ())
-    /// where
-    ///     C: CreateChild,
-    ///     R: ReceiveMessage<Response>,
-    /// {
-    ///     let CreateActorResult { task, mut actor_ref } = cell.create_child(child_actor).await;
-    ///     let _handle = tokio::spawn(task.run_task());
+    /// By awaiting an actor's scoped task, you are guaranteed that the entire subtree hierarchy of
+    /// actors rooted in the actor has completed.
     ///
-    ///     // do other work...
+    /// # Obtaining the output
     ///
-    ///     let request = Request { n: 1, reply_to: me };
-    ///     actor_ref.try_send(request).unwrap();
-    ///
-    ///     let response = receiver.recv().await.into_message().unwrap();
-    ///     println!("received response: {:?}", response.n);
-    ///
-    ///     // handle.await.unwrap(); // not necessary
-    ///     (cell, ())
-    /// }
-    ///
-    /// async fn child_actor<C, R>(cell: C, mut receiver: R, _me: ActorRef<Request>) -> (C, ())
-    /// where
-    ///     C: CreateChild,
-    ///     R: ReceiveMessage<Request>,
-    /// {
-    ///     let mut request = receiver.recv().await.into_message().unwrap();
-    ///     println!("received request: {:?}", request.n);
-    ///     let response = Response { n: request.n * 2 };
-    ///     request.reply_to.try_send(response).unwrap();
-    ///
-    ///     (cell, ())
-    /// }
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let CreateActorResult { task, .. } = actum(root_actor);
-    ///     task.run_task().await;
-    /// }
-    /// ```
+    /// The scoped task returns the output of the actor's future.
+    /// If you want to obtain the output, await the scoped task.
     fn create_child<M, F, Fut, Output>(
         &mut self,
         f: F,
-    ) -> impl Future<Output = CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>> + Send + '_
+    ) -> impl Future<Output = CreateActorResult<M, Self::ScopedActorTaskT<M, F, Fut, Output>>> + Send + '_
     where
         M: Send + 'static,
         F: FnOnce(Self, Self::ReceiveMessageT<M>, ActorRef<M>) -> Fut + Send + 'static,

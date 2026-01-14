@@ -32,7 +32,7 @@ async fn main() {
 
     let root = actum(an_actor);
     let span = tracing::trace_span!("root");
-    let handle = tokio::spawn(root.task.run_task().instrument(span));
+    let handle = tokio::spawn(root.task.instrument(span));
 
     // let _ = root.actor_ref.try_send(1);
 

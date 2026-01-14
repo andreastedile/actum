@@ -1,6 +1,6 @@
 use crate::actor::create_child::ActorCell;
 use crate::actor::receive_message::MessageReceiver;
-use crate::actor::run_task::ActorTask;
+use crate::actor::scoped::ScopedActorTask;
 use crate::core::actor_ref::ActorRef;
 use crate::core::actor_to_spawn::CreateActorResult;
 use futures::channel::mpsc;
@@ -18,7 +18,7 @@ where
 
     let cell = ActorCell::new();
 
-    let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), None);
+    let task = ScopedActorTask::new(f, cell, receiver, actor_ref.clone(), None);
 
     CreateActorResult::new(task, actor_ref)
 }

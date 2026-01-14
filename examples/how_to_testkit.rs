@@ -13,7 +13,7 @@ where
         .create_child(move |cell, receiver, me| async move { generic_child(cell, receiver, me, m).await })
         .await;
     let span = tracing::trace_span!("child");
-    let m_times_two = tokio::spawn(child.task.run_task().instrument(span)).await.unwrap();
+    let m_times_two = tokio::spawn(child.task.instrument(span)).await.unwrap();
 
     assert_eq!(m_times_two, m * 2);
 
@@ -51,7 +51,7 @@ async fn test() {
         testkit: mut parent_tk,
     } = actum_with_testkit(generic_parent);
     let span = tracing::trace_span!("parent");
-    let handle = tokio::spawn(task.run_task().instrument(span));
+    let handle = tokio::spawn(task.instrument(span));
 
     actor_ref.try_send(1).unwrap();
 
@@ -100,7 +100,7 @@ async fn main() {
 
     let mut parent = actum(generic_parent);
     let span = tracing::trace_span!("parent");
-    let handle = tokio::spawn(parent.task.run_task().instrument(span));
+    let handle = tokio::spawn(parent.task.instrument(span));
 
     parent.actor_ref.try_send(1).unwrap();
 

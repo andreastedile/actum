@@ -1,5 +1,5 @@
 use crate::actor::receive_message::MessageReceiver;
-use crate::actor::run_task::ActorTask;
+use crate::actor::scoped::ScopedActorTask;
 use crate::core::actor_ref::ActorRef;
 use crate::core::actor_to_spawn::CreateActorResult;
 use crate::core::children_tracker::ChildrenTracker;
@@ -31,15 +31,18 @@ impl CreateChild for ActorCell {
     where
         M: Send + 'static;
 
-    type RunTaskT<M, F, Fut, Output>
-        = ActorTask<M, F, Fut, Output>
+    type ScopedActorTaskT<M, F, Fut, Output>
+        = ScopedActorTask<M, F, Fut, Output>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
         Fut: Future<Output = (Self, Output)> + Send + 'static,
         Output: Send + 'static;
 
-    async fn create_child<M, F, Fut, Output>(&mut self, f: F) -> CreateActorResult<M, Self::RunTaskT<M, F, Fut, Output>>
+    async fn create_child<M, F, Fut, Output>(
+        &mut self,
+        f: F,
+    ) -> CreateActorResult<M, Self::ScopedActorTaskT<M, F, Fut, Output>>
     where
         M: Send + 'static,
         F: FnOnce(Self, MessageReceiver<M>, ActorRef<M>) -> Fut + Send + 'static,
@@ -54,7 +57,7 @@ impl CreateChild for ActorCell {
 
         let tracker = self.tracker.make_child();
 
-        let task = ActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker));
+        let task = ScopedActorTask::new(f, cell, receiver, actor_ref.clone(), Some(tracker));
 
         CreateActorResult::new(task, actor_ref)
     }

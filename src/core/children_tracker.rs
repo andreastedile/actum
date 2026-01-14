@@ -44,27 +44,9 @@ impl ChildrenTracker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn join_all(&mut self) -> impl Future<Output = ()> + '_ {
-        poll_fn(|cx| {
-            let Some(state) = self.inner.as_ref() else {
-                return Poll::Ready(());
-            };
-            let current = state.children_count.load(Ordering::Relaxed);
-            if current == 0 {
-                self.inner = None;
-                Poll::Ready(())
-            } else {
-                state.parent_waker.register(cx.waker());
-
-                let current = state.children_count.load(Ordering::Relaxed);
-                if current == 0 {
-                    self.inner = None;
-                    Poll::Ready(())
-                } else {
-                    Poll::Pending
-                }
-            }
-        })
+        poll_fn(|cx| self.poll(cx))
     }
 
     pub fn poll(&mut self, cx: &mut Context) -> Poll<()> {
