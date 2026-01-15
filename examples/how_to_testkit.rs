@@ -77,12 +77,12 @@ async fn test() {
         .await;
 
     let _ = child_tk
-        .expect_returned_effect(async |effect| {
+        .expect_completed_effect(async |effect| {
             assert_eq!(*effect.output, 2);
         })
         .await;
 
-    let _ = parent_tk.expect_returned_effect(async |_| {}).await;
+    let _ = parent_tk.expect_completed_effect(async |_| {}).await;
 
     handle.await.unwrap();
 }

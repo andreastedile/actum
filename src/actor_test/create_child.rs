@@ -1,6 +1,6 @@
+use crate::actor_test::effect::completed_effect::{CompletedEffectToActor, CompletedEffectToTestkit};
 use crate::actor_test::effect::create_child_effect::{CreateChildEffectToActor, UntypedCreateChildEffectToTestkit};
 use crate::actor_test::effect::recv_effect::{RecvEffectToActor, RecvEffectToTestkit};
-use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
 use crate::actor_test::scoped::ScopedActorTask;
 use crate::core::children_tracker::ChildrenTracker;
@@ -56,8 +56,8 @@ impl CreateChild for ActorCell {
         let recv_effect_to_actor_channel = mpsc::channel::<RecvEffectToActor<M>>(1);
         let create_child_effect_to_testkit_channel = mpsc::channel::<UntypedCreateChildEffectToTestkit>(1);
         let create_child_effect_to_actor_channel = mpsc::channel::<CreateChildEffectToActor>(1);
-        let returned_effect_to_testkit_channel = oneshot::channel::<ReturnedEffectToTestkit<Output>>();
-        let returned_effect_to_actor_channel = oneshot::channel::<ReturnedEffectToActor<Output>>();
+        let completed_effect_to_testkit_channel = oneshot::channel::<CompletedEffectToTestkit<Output>>();
+        let completed_effect_to_actor_channel = oneshot::channel::<CompletedEffectToActor<Output>>();
 
         let m_channel = mpsc::channel::<M>(100);
         let actor_ref = ActorRef::new(m_channel.0);
@@ -77,8 +77,8 @@ impl CreateChild for ActorCell {
             recv_effect_to_actor_channel.0,
             create_child_effect_to_testkit_channel.1,
             create_child_effect_to_actor_channel.0,
-            returned_effect_to_testkit_channel.1,
-            returned_effect_to_actor_channel.0,
+            completed_effect_to_testkit_channel.1,
+            completed_effect_to_actor_channel.0,
         );
 
         let create_child_to_testkit = UntypedCreateChildEffectToTestkit {
@@ -107,8 +107,8 @@ impl CreateChild for ActorCell {
             receiver,
             actor_ref.clone(),
             Some(self.tracker.make_child()),
-            returned_effect_to_testkit_channel.0,
-            returned_effect_to_actor_channel.1,
+            completed_effect_to_testkit_channel.0,
+            completed_effect_to_actor_channel.1,
         );
 
         CreateActorResult::new(task, actor_ref)

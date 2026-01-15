@@ -70,7 +70,7 @@ impl<M> MessageReceiver<M> {
 ///         .await;
 ///     let _ = testkit.expect_recv_effect(async |_| {}).await;
 ///     let _ = testkit.expect_recv_effect(async |_| {}).await;
-///     let _ = testkit.expect_returned_effect(async |_| {}).await;
+///     let _ = testkit.expect_completed_effect(async |_| {}).await;
 ///
 ///     root_handle.await.unwrap();
 /// }

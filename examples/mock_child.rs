@@ -59,8 +59,8 @@ async fn test() {
         })
         .await;
 
-    let _ = child_tk.expect_returned_effect(async |_| {}).await;
-    let _ = parent_tk.expect_returned_effect(async |_| {}).await;
+    let _ = child_tk.expect_completed_effect(async |_| {}).await;
+    let _ = parent_tk.expect_completed_effect(async |_| {}).await;
 
     handle.await.unwrap();
 }

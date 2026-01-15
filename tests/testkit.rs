@@ -62,7 +62,7 @@ async fn test_slow_testkit() {
         .await;
 
     let _ = testkit
-        .expect_returned_effect(async |_| {})
+        .expect_completed_effect(async |_| {})
         .instrument(info_span!("testkit"))
         .await;
 
@@ -118,7 +118,7 @@ async fn test_recv_effect_discard() {
         .await;
 
     let _ = testkit
-        .expect_returned_effect(async |_| {})
+        .expect_completed_effect(async |_| {})
         .instrument(info_span!("testkit"))
         .await;
 

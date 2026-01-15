@@ -1,5 +1,5 @@
 use crate::actor_test::create_child::ActorCell;
-use crate::actor_test::effect::returned_effect::{ReturnedEffectToActor, ReturnedEffectToTestkit};
+use crate::actor_test::effect::completed_effect::{CompletedEffectToActor, CompletedEffectToTestkit};
 use crate::actor_test::receive_message::MessageReceiver;
 use crate::core::children_tracker::{ChildrenTracker, WakeParentOnDrop};
 use crate::prelude::ActorRef;
@@ -29,22 +29,22 @@ enum TaskState<M, F, Fut, Output> {
         receiver: MessageReceiver<M>,
         cell: ActorCell,
         actor_ref: ActorRef<M>,
-        returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
-        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
+        completed_effect_to_testkit_sender: oneshot::Sender<CompletedEffectToTestkit<Output>>,
+        completed_effect_to_actor_receiver: oneshot::Receiver<CompletedEffectToActor<Output>>,
     },
     State1 {
         either: Either<ManuallyDrop<Fut>, BoxFuture<'static, (ActorCell, Output)>>,
-        returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
-        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
+        completed_effect_to_testkit_sender: oneshot::Sender<CompletedEffectToTestkit<Output>>,
+        completed_effect_to_actor_receiver: oneshot::Receiver<CompletedEffectToActor<Output>>,
     },
     State2 {
         tracker: ChildrenTracker,
         output: Output,
-        returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
-        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
+        completed_effect_to_testkit_sender: oneshot::Sender<CompletedEffectToTestkit<Output>>,
+        completed_effect_to_actor_receiver: oneshot::Receiver<CompletedEffectToActor<Output>>,
     },
     State3 {
-        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
+        completed_effect_to_actor_receiver: oneshot::Receiver<CompletedEffectToActor<Output>>,
     },
     Completed,
 }
@@ -56,8 +56,8 @@ impl<M, F, Fut, Output> ScopedActorTask<M, F, Fut, Output> {
         receiver: MessageReceiver<M>,
         actor_ref: ActorRef<M>,
         waker: Option<WakeParentOnDrop>,
-        returned_effect_to_testkit_sender: oneshot::Sender<ReturnedEffectToTestkit<Output>>,
-        returned_effect_to_actor_receiver: oneshot::Receiver<ReturnedEffectToActor<Output>>,
+        completed_effect_to_testkit_sender: oneshot::Sender<CompletedEffectToTestkit<Output>>,
+        completed_effect_to_actor_receiver: oneshot::Receiver<CompletedEffectToActor<Output>>,
     ) -> Self {
         Self {
             state: TaskState::State0 {
@@ -65,8 +65,8 @@ impl<M, F, Fut, Output> ScopedActorTask<M, F, Fut, Output> {
                 receiver,
                 cell,
                 actor_ref,
-                returned_effect_to_testkit_sender,
-                returned_effect_to_actor_receiver,
+                completed_effect_to_testkit_sender,
+                completed_effect_to_actor_receiver,
             },
             _waker: waker,
             _pin: PhantomPinned,
@@ -99,8 +99,8 @@ where
                         receiver,
                         cell,
                         actor_ref,
-                        returned_effect_to_testkit_sender,
-                        returned_effect_to_actor_receiver,
+                        completed_effect_to_testkit_sender,
+                        completed_effect_to_actor_receiver,
                     } = mem::replace(&mut this.state, TaskState::Completed)
                     else {
                         unreachable!();
@@ -120,8 +120,8 @@ where
 
                     this.state = TaskState::State1 {
                         either,
-                        returned_effect_to_testkit_sender,
-                        returned_effect_to_actor_receiver,
+                        completed_effect_to_testkit_sender,
+                        completed_effect_to_actor_receiver,
                     };
                     continue;
                 }
@@ -157,8 +157,8 @@ where
                     // which we have manually dropped.
                     // Therefore, we can safely move the field.
                     let TaskState::State1 {
-                        returned_effect_to_testkit_sender,
-                        returned_effect_to_actor_receiver,
+                        completed_effect_to_testkit_sender,
+                        completed_effect_to_actor_receiver,
                         either,
                     } = mem::replace(&mut this.state, TaskState::Completed)
                     else {
@@ -174,18 +174,18 @@ where
                         this.state = TaskState::State2 {
                             tracker: cell.tracker,
                             output,
-                            returned_effect_to_testkit_sender,
-                            returned_effect_to_actor_receiver,
+                            completed_effect_to_testkit_sender,
+                            completed_effect_to_actor_receiver,
                         };
                         continue;
                     } else {
-                        let returned_effect_to_testkit = ReturnedEffectToTestkit { output };
-                        returned_effect_to_testkit_sender
-                            .send(returned_effect_to_testkit)
+                        let completed_effect_to_testkit = CompletedEffectToTestkit { output };
+                        completed_effect_to_testkit_sender
+                            .send(completed_effect_to_testkit)
                             .expect("could not send the effect to the testkit");
 
                         this.state = TaskState::State3 {
-                            returned_effect_to_actor_receiver,
+                            completed_effect_to_actor_receiver,
                         };
                         continue;
                     }
@@ -195,33 +195,33 @@ where
 
                     let TaskState::State2 {
                         output,
-                        returned_effect_to_testkit_sender,
-                        returned_effect_to_actor_receiver,
+                        completed_effect_to_testkit_sender,
+                        completed_effect_to_actor_receiver,
                         ..
                     } = mem::replace(&mut this.state, TaskState::Completed)
                     else {
                         unreachable!();
                     };
 
-                    let returned_effect_to_testkit = ReturnedEffectToTestkit { output };
-                    returned_effect_to_testkit_sender
-                        .send(returned_effect_to_testkit)
+                    let completed_effect_to_testkit = CompletedEffectToTestkit { output };
+                    completed_effect_to_testkit_sender
+                        .send(completed_effect_to_testkit)
                         .expect("could not send the effect to the testkit");
 
                     this.state = TaskState::State3 {
-                        returned_effect_to_actor_receiver,
+                        completed_effect_to_actor_receiver,
                     };
                     continue;
                 }
                 TaskState::State3 {
-                    returned_effect_to_actor_receiver,
+                    completed_effect_to_actor_receiver,
                 } => {
-                    let returned_effect_to_actor = ready!(returned_effect_to_actor_receiver.poll_unpin(cx))
+                    let completed_effect_to_actor = ready!(completed_effect_to_actor_receiver.poll_unpin(cx))
                         .expect("could not receive effect back from the testkit");
 
                     this.state = TaskState::Completed;
 
-                    return Poll::Ready(returned_effect_to_actor.output);
+                    return Poll::Ready(completed_effect_to_actor.output);
                 }
                 TaskState::Completed => {
                     panic!("ControlTask polled after completion");

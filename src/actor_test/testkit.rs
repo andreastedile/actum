@@ -1,8 +1,8 @@
+use crate::actor_test::effect::completed_effect::{CompletedEffect, CompletedEffectToActor, CompletedEffectToTestkit};
 use crate::actor_test::effect::create_child_effect::{
     CreateChildEffectToActor, UntypedCreateChildEffect, UntypedCreateChildEffectToTestkit,
 };
 use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectToActor, RecvEffectToTestkit};
-use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::effect::{Effect, EffectPrivate};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -35,9 +35,9 @@ struct TestkitState<M, Output> {
     recv_effect_to_actor_sender: mpsc::Sender<RecvEffectToActor<M>>,
     create_child_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectToTestkit>,
     create_child_effect_to_actor_sender: mpsc::Sender<CreateChildEffectToActor>,
-    returned_effect_to_testkit_receiver: oneshot::Receiver<ReturnedEffectToTestkit<Output>>,
+    completed_effect_to_testkit_receiver: oneshot::Receiver<CompletedEffectToTestkit<Output>>,
     /// Wrapped in Option so that it can be taken.
-    returned_effect_to_actor_sender: Option<oneshot::Sender<ReturnedEffectToActor<Output>>>,
+    completed_effect_to_actor_sender: Option<oneshot::Sender<CompletedEffectToActor<Output>>>,
 }
 
 impl<M, Output> TestkitState<M, Output> {
@@ -70,7 +70,7 @@ impl<M, Output> TestkitState<M, Output> {
             Poll::Pending => {}
         }
 
-        match self.returned_effect_to_testkit_receiver.poll_unpin(cx) {
+        match self.completed_effect_to_testkit_receiver.poll_unpin(cx) {
             Poll::Ready(Ok(incoming)) => {
                 let private = EffectPrivate::from(incoming);
                 return Poll::Ready(Some(private));
@@ -89,8 +89,8 @@ impl<M, Output> Testkit<M, Output> {
         recv_effect_to_actor_sender: mpsc::Sender<RecvEffectToActor<M>>,
         create_child_to_testkit_receiver: mpsc::Receiver<UntypedCreateChildEffectToTestkit>,
         create_child_effect_to_actor_sender: mpsc::Sender<CreateChildEffectToActor>,
-        returned_effect_to_testkit_receiver: oneshot::Receiver<ReturnedEffectToTestkit<Output>>,
-        returned_effect_to_actor_sender: oneshot::Sender<ReturnedEffectToActor<Output>>,
+        completed_effect_to_testkit_receiver: oneshot::Receiver<CompletedEffectToTestkit<Output>>,
+        completed_effect_to_actor_sender: oneshot::Sender<CompletedEffectToActor<Output>>,
     ) -> Self {
         Self {
             state: TestkitState {
@@ -98,8 +98,8 @@ impl<M, Output> Testkit<M, Output> {
                 recv_effect_to_actor_sender,
                 create_child_to_testkit_receiver,
                 create_child_effect_to_actor_sender,
-                returned_effect_to_testkit_receiver,
-                returned_effect_to_actor_sender: Some(returned_effect_to_actor_sender),
+                completed_effect_to_testkit_receiver,
+                completed_effect_to_actor_sender: Some(completed_effect_to_actor_sender),
             },
             closed: false,
         }
@@ -110,7 +110,7 @@ impl<M, Output> Testkit<M, Output> {
     /// The closure can return a generic object, such as the [Testkit] of a child actor.
     ///
     /// # Panics
-    /// If the testkit has already received the [ReturnedEffect].
+    /// If the testkit has already received the [CompletedEffect].
     #[must_use]
     pub async fn test_next_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(Effect<'_, M, Output>) -> T) -> T
     where
@@ -140,14 +140,14 @@ impl<M, Output> Testkit<M, Output> {
                     // The cell of the actor under test has been dropped.
                 }
             }
-            EffectPrivate::Returned(inner) => {
-                let effect = ReturnedEffectToActor::from(inner);
+            EffectPrivate::Completed(inner) => {
+                let effect = CompletedEffectToActor::from(inner);
                 self.state
-                    .returned_effect_to_actor_sender
+                    .completed_effect_to_actor_sender
                     .take()
                     .unwrap()
                     .send(effect)
-                    .expect("could not send the returned effect back to scoped actor task");
+                    .expect("could not send the completed effect back to scoped actor task");
 
                 self.closed = true;
             }
@@ -161,7 +161,7 @@ impl<M, Output> Testkit<M, Output> {
     /// The closure can return a generic object.
     ///
     /// # Panics
-    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
+    /// If the testkit has already received the [CompletedEffect] or the received effect is not the right type.
     ///
     /// # Example
     /// ```
@@ -199,7 +199,7 @@ impl<M, Output> Testkit<M, Output> {
     ///         })
     ///         .await;
     ///
-    ///     let _ = testkit.expect_returned_effect(async |_| {}).await;
+    ///     let _ = testkit.expect_completed_effect(async |_| {}).await;
     ///
     ///     handle.await.unwrap();
     /// }
@@ -222,7 +222,7 @@ impl<M, Output> Testkit<M, Output> {
     /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
     /// # Panics
-    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
+    /// If the testkit has already received the [CompletedEffect] or the received effect is not the right type.
     ///
     /// # Examples
     /// Test whether the actor called [create_child](crate::core::create_child::CreateChild::create_child).
@@ -260,8 +260,8 @@ impl<M, Output> Testkit<M, Output> {
     ///         effect.testkit
     ///     }).await;
     ///
-    ///     child_tk.expect_returned_effect(async |_| {}).await;
-    ///     parent_tk.expect_returned_effect(async |_| {}).await;
+    ///     child_tk.expect_completed_effect(async |_| {}).await;
+    ///     parent_tk.expect_completed_effect(async |_| {}).await;
     ///
     ///     handle.await.unwrap();
     /// }
@@ -282,12 +282,12 @@ impl<M, Output> Testkit<M, Output> {
         .await
     }
 
-    /// Receives the [ReturnedEffect] from the actor under test and evaluates it with the provided closure.
+    /// Receives the [CompletedEffect] from the actor under test and evaluates it with the provided closure.
     ///
     /// The closure can return a generic object, such as the [Testkit] of the child actor.
     ///
     /// # Panics
-    /// If the testkit has already received the [ReturnedEffect] or the received effect is not the right type.
+    /// If the testkit has already received the [CompletedEffect] or the received effect is not the right type.
     ///
     /// # Example
     /// Test whether the actor returned.
@@ -307,7 +307,7 @@ impl<M, Output> Testkit<M, Output> {
     ///     let ActumWithTestkit { task, mut actor_ref, mut testkit } = actum_with_testkit(parent);
     ///     let handle = tokio::spawn(task);
     ///
-    ///     testkit.expect_returned_effect(async |effect| {
+    ///     testkit.expect_completed_effect(async |effect| {
     ///         assert_eq!(*effect.output, "returned");
     ///     }).await;
     ///
@@ -315,9 +315,9 @@ impl<M, Output> Testkit<M, Output> {
     /// }
     /// ```
     #[must_use]
-    pub async fn expect_returned_effect<T>(
+    pub async fn expect_completed_effect<T>(
         &mut self,
-        handler: impl for<'a> AsyncFnOnce(ReturnedEffect<'a, Output>) -> T,
+        handler: impl for<'a> AsyncFnOnce(CompletedEffect<'a, Output>) -> T,
     ) -> T
     where
         M: Send + 'static,
@@ -325,7 +325,7 @@ impl<M, Output> Testkit<M, Output> {
     {
         let t = self
             .test_next_effect(async |effect| {
-                let variant = effect.into_returned().expect("unexpected effect");
+                let variant = effect.into_completed().expect("unexpected effect");
                 handler(variant).await
             })
             .await;
@@ -373,13 +373,13 @@ mod tests {
     use crate::actor_test::actum_with_testkit::actum_with_testkit;
 
     #[tokio::test]
-    async fn test_that_closed_becomes_true_after_the_returned_effect_is_received() {
+    async fn test_that_closed_becomes_true_after_the_completed_effect_is_received() {
         let ActumWithTestkit { task, mut testkit, .. } =
             actum_with_testkit::<(), _, _, u32>(|cell, _, _| async move { (cell, 42) });
         let handle = tokio::spawn(task);
 
         let _ = testkit
-            .expect_returned_effect(async |effect| {
+            .expect_completed_effect(async |effect| {
                 assert_eq!(*effect.output, 42);
             })
             .await;

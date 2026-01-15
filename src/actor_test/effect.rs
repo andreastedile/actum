@@ -1,12 +1,12 @@
+pub mod completed_effect;
 pub mod create_child_effect;
 pub mod recv_effect;
-pub mod returned_effect;
 
+use crate::actor_test::effect::completed_effect::{CompletedEffect, CompletedEffectPrivate, CompletedEffectToTestkit};
 use crate::actor_test::effect::create_child_effect::{
     UntypedCreateChildEffect, UntypedCreateChildEffectPrivate, UntypedCreateChildEffectToTestkit,
 };
 use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectPrivate, RecvEffectToTestkit};
-use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectPrivate, ReturnedEffectToTestkit};
 use enum_as_inner::EnumAsInner;
 use std::fmt::{Debug, Formatter};
 
@@ -14,7 +14,7 @@ use std::fmt::{Debug, Formatter};
 pub enum Effect<'a, M, Output> {
     Recv(RecvEffect<'a, M>),
     CreateChild(UntypedCreateChildEffect<'a>),
-    Returned(ReturnedEffect<'a, Output>),
+    Completed(CompletedEffect<'a, Output>),
 }
 
 impl<'a, M, Output> Debug for Effect<'a, M, Output> {
@@ -22,7 +22,7 @@ impl<'a, M, Output> Debug for Effect<'a, M, Output> {
         match self {
             Self::Recv(inner) => inner.fmt(f),
             Self::CreateChild(inner) => inner.fmt(f),
-            Self::Returned(inner) => inner.fmt(f),
+            Self::Completed(inner) => inner.fmt(f),
         }
     }
 }
@@ -38,7 +38,7 @@ impl<'a, M, Output> From<&'a mut EffectPrivate<M, Output>> for Effect<'a, M, Out
                 untyped_testkit: variant.untyped_testkit.take().unwrap(),
                 injected: &mut variant.injected,
             }),
-            EffectPrivate::Returned(variant) => Self::Returned(ReturnedEffect {
+            EffectPrivate::Completed(variant) => Self::Completed(CompletedEffect {
                 output: &mut variant.output,
             }),
         }
@@ -48,7 +48,7 @@ impl<'a, M, Output> From<&'a mut EffectPrivate<M, Output>> for Effect<'a, M, Out
 pub(crate) enum EffectPrivate<M, Output> {
     Recv(RecvEffectPrivate<M>),
     CreateChild(UntypedCreateChildEffectPrivate),
-    Returned(ReturnedEffectPrivate<Output>),
+    Completed(CompletedEffectPrivate<Output>),
 }
 
 impl<M, Output> From<RecvEffectToTestkit<M>> for EffectPrivate<M, Output> {
@@ -69,8 +69,8 @@ impl<M, Output> From<UntypedCreateChildEffectToTestkit> for EffectPrivate<M, Out
     }
 }
 
-impl<M, Output> From<ReturnedEffectToTestkit<Output>> for EffectPrivate<M, Output> {
-    fn from(effect: ReturnedEffectToTestkit<Output>) -> Self {
-        Self::Returned(ReturnedEffectPrivate { output: effect.output })
+impl<M, Output> From<CompletedEffectToTestkit<Output>> for EffectPrivate<M, Output> {
+    fn from(effect: CompletedEffectToTestkit<Output>) -> Self {
+        Self::Completed(CompletedEffectPrivate { output: effect.output })
     }
 }
