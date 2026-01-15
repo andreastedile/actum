@@ -2,7 +2,7 @@ use futures::task::AtomicWaker;
 use std::future::{Future, poll_fn};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 #[derive(Default)]
 pub(crate) struct ChildrenTracker {
@@ -65,6 +65,27 @@ impl ChildrenTracker {
                 }
             }
         })
+    }
+
+    pub fn poll(&mut self, cx: &mut Context) -> Poll<()> {
+        let Some(state) = self.inner.as_ref() else {
+            return Poll::Ready(());
+        };
+        let current = state.children_count.load(Ordering::Relaxed);
+        if current == 0 {
+            self.inner = None;
+            Poll::Ready(())
+        } else {
+            state.parent_waker.register(cx.waker());
+
+            let current = state.children_count.load(Ordering::Relaxed);
+            if current == 0 {
+                self.inner = None;
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        }
     }
 }
 
