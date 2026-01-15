@@ -102,3 +102,11 @@ impl Debug for CreateChildEffectToActor {
             .finish()
     }
 }
+
+impl From<UntypedCreateChildEffectPrivate> for CreateChildEffectToActor {
+    fn from(effect: UntypedCreateChildEffectPrivate) -> Self {
+        CreateChildEffectToActor {
+            injected: effect.injected,
+        }
+    }
+}

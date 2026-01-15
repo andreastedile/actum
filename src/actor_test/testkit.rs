@@ -1,28 +1,31 @@
 use crate::actor_test::effect::create_child_effect::{
-    CreateChildEffectToActor, UntypedCreateChildEffect, UntypedCreateChildEffectPrivate,
-    UntypedCreateChildEffectToTestkit,
+    CreateChildEffectToActor, UntypedCreateChildEffect, UntypedCreateChildEffectToTestkit,
 };
-use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectPrivate, RecvEffectToActor, RecvEffectToTestkit};
-use crate::actor_test::effect::returned_effect::{
-    ReturnedEffect, ReturnedEffectPrivate, ReturnedEffectToActor, ReturnedEffectToTestkit,
-};
+use crate::actor_test::effect::recv_effect::{RecvEffect, RecvEffectToActor, RecvEffectToTestkit};
+use crate::actor_test::effect::returned_effect::{ReturnedEffect, ReturnedEffectToActor, ReturnedEffectToTestkit};
 use crate::actor_test::effect::{Effect, EffectPrivate};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::future::poll_fn;
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 pub struct Testkit<M, Output> {
-    /// Becomes None once [ReturnedEffect] has been received.
-    state: Option<TestkitState<M, Output>>,
+    state: TestkitState<M, Output>,
+    closed: bool,
+}
+
+impl<M, Output> Testkit<M, Output> {
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
 }
 
 impl<M, Output> Debug for Testkit<M, Output> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Testkit")
-            .field("returned", &self.state.is_none())
+            .field("closed", &self.closed)
             .finish_non_exhaustive()
     }
 }
@@ -37,6 +40,49 @@ struct TestkitState<M, Output> {
     returned_effect_to_actor_sender: Option<oneshot::Sender<ReturnedEffectToActor<Output>>>,
 }
 
+impl<M, Output> TestkitState<M, Output> {
+    async fn next(&mut self) -> Option<EffectPrivate<M, Output>> {
+        poll_fn(|cx| self.poll(cx)).await
+    }
+
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<Option<EffectPrivate<M, Output>>> {
+        match self.recv_effect_to_testkit_receiver.poll_next_unpin(cx) {
+            Poll::Ready(None) => {
+                // this kind of effect comes from within the actor's receiver:
+                // therefore, this case implies that the receiver has been dropped.
+            }
+            Poll::Ready(Some(incoming)) => {
+                let private = EffectPrivate::from(incoming);
+                return Poll::Ready(Some(private));
+            }
+            Poll::Pending => {}
+        };
+
+        match self.create_child_to_testkit_receiver.poll_next_unpin(cx) {
+            Poll::Ready(None) => {
+                // this kind of effect comes from within the actor's cell:
+                // therefore, this case implies that the cell has been dropped.
+            }
+            Poll::Ready(Some(incoming)) => {
+                let private = EffectPrivate::from(incoming);
+                return Poll::Ready(Some(private));
+            }
+            Poll::Pending => {}
+        }
+
+        match self.returned_effect_to_testkit_receiver.poll_unpin(cx) {
+            Poll::Ready(Ok(incoming)) => {
+                let private = EffectPrivate::from(incoming);
+                return Poll::Ready(Some(private));
+            }
+            Poll::Ready(Err(oneshot::Canceled)) => return Poll::Ready(None),
+            Poll::Pending => {}
+        }
+
+        Poll::Pending
+    }
+}
+
 impl<M, Output> Testkit<M, Output> {
     pub(crate) const fn new(
         recv_effect_to_testkit_receiver: mpsc::Receiver<RecvEffectToTestkit<M>>,
@@ -47,14 +93,15 @@ impl<M, Output> Testkit<M, Output> {
         returned_effect_to_actor_sender: oneshot::Sender<ReturnedEffectToActor<Output>>,
     ) -> Self {
         Self {
-            state: Some(TestkitState {
+            state: TestkitState {
                 recv_effect_to_testkit_receiver,
                 recv_effect_to_actor_sender,
                 create_child_to_testkit_receiver,
                 create_child_effect_to_actor_sender,
                 returned_effect_to_testkit_receiver,
                 returned_effect_to_actor_sender: Some(returned_effect_to_actor_sender),
-            }),
+            },
+            closed: false,
         }
     }
 
@@ -65,101 +112,44 @@ impl<M, Output> Testkit<M, Output> {
     /// # Panics
     /// If the testkit has already received the [ReturnedEffect].
     #[must_use]
-    pub async fn test_next_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(Effect<'a, M, Output>) -> T) -> T
+    pub async fn test_next_effect<T>(&mut self, handler: impl for<'a> AsyncFnOnce(Effect<'_, M, Output>) -> T) -> T
     where
         M: Send + 'static,
         Output: Send + 'static,
     {
-        let state = self.state.as_mut().unwrap();
+        // fast path
+        if self.closed {
+            panic!("testkit is closed");
+        }
 
-        let mut effect_private = poll_fn(|cx| {
-            match state.recv_effect_to_testkit_receiver.next().poll_unpin(cx) {
-                Poll::Ready(None) => {
-                    // this kind of effect comes from within the actor's receiver:
-                    // therefore, this case implies that the receiver has been dropped.
-                }
-                Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(EffectPrivate::Recv(RecvEffectPrivate {
-                        recv: effect.recv,
-                        discarded: false,
-                    }));
-                }
-                Poll::Pending => {}
-            };
-            match state.create_child_to_testkit_receiver.next().poll_unpin(cx) {
-                Poll::Ready(None) => {
-                    // this kind of effect comes from within the actor's cell:
-                    // therefore, this case implies that the cell has been dropped.
-                }
-                Poll::Ready(Some(effect)) => {
-                    return Poll::Ready(EffectPrivate::CreateChild(UntypedCreateChildEffectPrivate {
-                        untyped_testkit: Some(effect.untyped_testkit),
-                        injected: None,
-                    }));
-                }
-                Poll::Pending => {}
-            }
-            match state.returned_effect_to_testkit_receiver.poll_unpin(cx) {
-                Poll::Ready(Ok(effect)) => {
-                    return Poll::Ready(EffectPrivate::Returned(ReturnedEffectPrivate { output: effect.output }));
-                }
-                Poll::Ready(Err(oneshot::Canceled)) => panic!("scoped actor task did not send the returned effect"),
-                Poll::Pending => {}
-            }
-            Poll::Pending
-        })
-        .await;
-
-        let effect = match &mut effect_private {
-            EffectPrivate::Recv(effect) => Effect::Recv(RecvEffect {
-                recv: &effect.recv,
-                discarded: &mut effect.discarded,
-            }),
-            EffectPrivate::CreateChild(effect) => Effect::CreateChild(UntypedCreateChildEffect {
-                untyped_testkit: effect.untyped_testkit.take().unwrap(),
-                injected: &mut effect.injected,
-            }),
-            EffectPrivate::Returned(effect) => Effect::Returned(ReturnedEffect { output: &effect.output }),
-        };
+        let mut effect_private = self.state.next().await.expect("testkit is closed");
+        let effect = Effect::from(&mut effect_private);
 
         let t = handler(effect).await;
 
         match effect_private {
             EffectPrivate::Recv(inner) => {
-                let recv_effect_to_actor = RecvEffectToActor {
-                    recv: inner.recv,
-                    discarded: inner.discarded,
-                };
-                if state
-                    .recv_effect_to_actor_sender
-                    .try_send(recv_effect_to_actor)
-                    .is_err()
-                {
+                let effect = RecvEffectToActor::from(inner);
+                if self.state.recv_effect_to_actor_sender.try_send(effect).is_err() {
                     // The receiver of the actor under test has been dropped.
                 }
             }
             EffectPrivate::CreateChild(inner) => {
-                let create_child_effect_to_actor = CreateChildEffectToActor {
-                    injected: inner.injected,
-                };
-                if state
-                    .create_child_effect_to_actor_sender
-                    .try_send(create_child_effect_to_actor)
-                    .is_err()
-                {
+                let effect = CreateChildEffectToActor::from(inner);
+                if self.state.create_child_effect_to_actor_sender.try_send(effect).is_err() {
                     // The cell of the actor under test has been dropped.
                 }
             }
             EffectPrivate::Returned(inner) => {
-                let returned_effect_to_actor = ReturnedEffectToActor { output: inner.output };
-                state
+                let effect = ReturnedEffectToActor::from(inner);
+                self.state
                     .returned_effect_to_actor_sender
                     .take()
                     .unwrap()
-                    .send(returned_effect_to_actor)
+                    .send(effect)
                     .expect("could not send the returned effect back to scoped actor task");
 
-                self.state = None;
+                self.closed = true;
             }
         }
 
@@ -339,7 +329,7 @@ impl<M, Output> Testkit<M, Output> {
                 handler(variant).await
             })
             .await;
-        self.state = None;
+        self.closed = true;
         t
     }
 }
@@ -383,7 +373,7 @@ mod tests {
     use crate::actor_test::actum_with_testkit::actum_with_testkit;
 
     #[tokio::test]
-    async fn test_that_state_is_set_to_none_after_the_returned_effect_is_received() {
+    async fn test_that_closed_becomes_true_after_the_returned_effect_is_received() {
         let ActumWithTestkit { task, mut testkit, .. } =
             actum_with_testkit::<(), _, _, u32>(|cell, _, _| async move { (cell, 42) });
         let handle = tokio::spawn(task);
@@ -394,7 +384,7 @@ mod tests {
             })
             .await;
 
-        assert!(testkit.state.is_none());
+        assert!(testkit.is_closed());
 
         handle.await.unwrap();
     }

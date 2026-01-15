@@ -52,6 +52,15 @@ pub(crate) struct RecvEffectToActor<M> {
     pub discarded: bool,
 }
 
+impl<M> From<RecvEffectPrivate<M>> for RecvEffectToActor<M> {
+    fn from(effect: RecvEffectPrivate<M>) -> Self {
+        RecvEffectToActor {
+            recv: effect.recv,
+            discarded: effect.discarded,
+        }
+    }
+}
+
 impl<M> Debug for RecvEffectToActor<M> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecvEffect")

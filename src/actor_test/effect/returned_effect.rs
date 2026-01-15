@@ -35,3 +35,9 @@ impl<Output> Debug for ReturnedEffectToActor<Output> {
         f.debug_struct("ReturnedEffect").finish_non_exhaustive()
     }
 }
+
+impl<Output> From<ReturnedEffectPrivate<Output>> for ReturnedEffectToActor<Output> {
+    fn from(effect: ReturnedEffectPrivate<Output>) -> Self {
+        ReturnedEffectToActor { output: effect.output }
+    }
+}
